@@ -1950,7 +1950,37 @@ uint32_t MyClient::setTelescopePark(INDI::BaseDevice *dp, bool isParked)
 
 uint32_t MyClient::setTelescopeHomeInit(INDI::BaseDevice *dp, QString command)
 {
-    // ---------- 优先尝试 HOME_INIT（Switch） ----------
+    const bool goHome = command == "SLEWHOME" || command == "RETURN_HOME";
+    const bool setHome = command == "SYNCHOME" || command == "AT_HOME";
+
+    // Newer INDI drivers, including OnStep, expose Home directly.
+    INDI::PropertySwitch home = dp->getProperty("TELESCOPE_HOME");
+    if (home.isValid() && (goHome || setHome))
+    {
+        const char *action = goHome ? "GO" : "SET";
+        if (auto *target = home.findWidgetByName(action))
+        {
+            const INDI::PropertyNumber position = dp->getProperty("EQUATORIAL_EOD_COORD");
+            if (mountState.isMovingNow() || mountState.isParked ||
+                (position.isValid() && position.getState() == IPS_BUSY))
+            {
+                Logger::Log("indi_client | setTelescopeHomeInit | Telescope is moving or parked",
+                            LogLevel::WARNING, DeviceType::MOUNT);
+                return QHYCCD_ERROR;
+            }
+
+            for (auto &item : home)
+                item.setState(ISS_OFF);
+            target->setState(ISS_ON);
+            sendNewProperty(home);
+
+            Logger::Log(std::string("indi_client | setTelescopeHomeInit | Sent TELESCOPE_HOME.") + action,
+                        LogLevel::INFO, DeviceType::MOUNT);
+            return QHYCCD_SUCCESS;
+        }
+    }
+
+    // Older drivers may use the original HOME_INIT switch.
     INDI::PropertySwitch prop = dp->getProperty("HOME_INIT");
     if (prop.isValid())
     {
