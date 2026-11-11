@@ -109,7 +109,7 @@
         >
           <div style="display: flex; justify-content: center; align-items: center;" data-testid="cp-btn-toggle-focuser-content">
             <img
-              src="@/assets/images/svg/ui/focuser.svg"
+              src="@/assets/images/svg/ui/focuser-capture.svg"
               height="45px"
               style="min-height: 45px; pointer-events: none;"
               data-testid="cp-img-focuser"

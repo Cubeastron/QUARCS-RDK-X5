@@ -49,7 +49,7 @@
 
       <button @click.stop.prevent="ResetHistogram" class="get-click btn-Reset" data-testid="hp-btn-reset">
         <div style="display: flex; justify-content: center; align-items: center;">
-          <img src="@/assets/images/svg/ui/reset.svg" height="25px" style="min-height: 25px; pointer-events: none;" data-testid="hp-img-reset"></img>
+          <img src="@/assets/images/svg/ui/reset-histogram.svg" height="25px" style="min-height: 25px; pointer-events: none;" data-testid="hp-img-reset"></img>
         </div>
       </button>
 
