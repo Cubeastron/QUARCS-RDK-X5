@@ -1,0 +1,18 @@
+[Unit]
+Description=QUARCS local sky catalog search
+After=network.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/opt/quarcs/search
+ExecStart=/usr/bin/python3 -B /opt/quarcs/search/server.py
+Restart=on-failure
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
