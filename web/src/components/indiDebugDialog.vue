@@ -1,0 +1,588 @@
+<template>
+  <transition name="dialog">
+    <div
+      class="indiDebugDialog"
+      :style="{ bottom, top }"
+      data-testid="ui-indi-debug-dialog-root"
+      :data-state="isOpen ? 'open' : 'closed'"
+    >
+      <div class="filter-bar">
+        <input
+          v-model.trim="keywordFilter"
+          type="text"
+          class="keyword-input"
+          :placeholder="$t('Filter logs by keyword')"
+          data-testid="ui-indi-debug-dialog-input-keyword-filter"
+        >
+        <button
+          v-if="keywordFilter"
+          type="button"
+          class="keyword-clear-button"
+          :title="$t('Clear keyword filter')"
+          @click="keywordFilter = ''"
+          data-testid="ui-indi-debug-dialog-btn-clear-keyword-filter"
+        >
+          <v-icon style="font-size: 16px;">mdi-close</v-icon>
+        </button>
+      </div>
+
+      <div class="debug-messages" ref="messageContainer" @scroll="checkIfScrolledToBottom">
+        <p v-for="(msg, index) in ShowMessages" :key="index" :style="getMsgStyle(msg.msgtype)">
+          {{ msg.msgtext }}
+        </p>
+      </div>
+
+      <button @click="scrollToBottom" :class="{ 'ToBottom-button-show': !isAtBottom, 'ToBottom-button-hide': isAtBottom }" data-testid="ui-indi-debug-dialog-btn-scroll-to-bottom">
+        <v-icon style="font-size: 15px;">mdi-chevron-down</v-icon>
+      </button>
+
+      <button @click="clearMessages" class="clear-button" data-testid="ui-indi-debug-dialog-btn-clear-messages">
+        <div style="display: flex; justify-content: center; align-items: center;">
+          <img src="@/assets/images/svg/ui/delete.svg" height="20px" style="min-height: 20px; pointer-events: none;"></img>
+        </div>
+      </button>
+
+      <button
+        type="button"
+        :title="$t('Copy current logs')"
+        @click="copyMessagesToClipboard"
+        class="save-button"
+        data-testid="ui-indi-debug-dialog-btn-copy-messages"
+      >
+        <div style="display: flex; justify-content: center; align-items: center;">
+          <img src="@/assets/images/svg/ui/Share.svg" height="20px" style="min-height: 20px; pointer-events: none;"></img>
+        </div>
+      </button>
+
+      <button @click="toggleErrorDebug" class="ErrorMsg-button" data-testid="ui-indi-debug-dialog-btn-toggle-error-debug">
+        <template v-if="isErrorDebugActive">
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <img src="@/assets/images/svg/ui/ErrorMsg_ON.svg" height="25px" style="min-height: 25px; pointer-events: none;"></img>
+          </div>
+        </template>
+        <template v-else>
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <img src="@/assets/images/svg/ui/ErrorMsg_OFF.svg" height="25px" style="min-height: 25px; pointer-events: none;"></img>
+          </div>
+        </template>
+      </button>
+
+      <button @click="toggleServerDebug" class="ServerMsg-button" data-testid="ui-indi-debug-dialog-btn-toggle-server-debug">
+        <template v-if="isServerDebugActive">
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <img src="@/assets/images/svg/ui/ServerMsg_ON.svg" height="25px" style="min-height: 25px; pointer-events: none;"></img>
+          </div>
+        </template>
+        <template v-else>
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <img src="@/assets/images/svg/ui/ServerMsg_OFF.svg" height="25px" style="min-height: 25px; pointer-events: none;"></img>
+          </div>
+        </template>
+      </button>
+
+      <button @click="toggleClientDebug" class="ClientMsg-button" data-testid="ui-indi-debug-dialog-btn-toggle-client-debug">
+        <template v-if="isClientDebugActive">
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <img src="@/assets/images/svg/ui/ClientMsg_ON.svg" height="25px" style="min-height: 25px; pointer-events: none;"></img>
+          </div>
+        </template>
+        <template v-else>
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <img src="@/assets/images/svg/ui/ClientMsg_OFF.svg" height="25px" style="min-height: 25px; pointer-events: none;"></img>
+          </div>
+        </template>
+      </button>
+
+      <button @click="dialogClose" class="btn-close" data-testid="ui-indi-debug-dialog-btn-close">
+        <div style="display: flex; justify-content: center; align-items: center;">
+          <img src="@/assets/images/svg/ui/OFF.svg" height="12px" style="min-height: 12px; pointer-events: none;"></img>
+        </div>
+      </button>
+
+    </div>
+  </transition>
+</template>
+
+<script>
+import Clipboard from 'clipboard';
+
+function syncDebugDialogLogs(messages) {
+  if (typeof window === 'undefined') return;
+  window.__QUARCS_DEBUG_DIALOG_LOGS__ = Array.isArray(messages)
+    ? messages.map((item) => ({ ...item }))
+    : [];
+}
+
+export default {
+  name: 'indiDebugDialog',
+  props: {
+    // 由父组件（gui.vue）传入，用于稳定输出 data-state=open|closed（契约要求）
+    isOpen: { type: Boolean, default: false },
+  },
+  data() {
+    return {
+      // 原高度为 calc(100vh - 100px)，这里将其收缩到 80%，并保持近似居中
+      top: 'calc(10vh + 40px)',
+      bottom: 'calc(10vh + 40px)',
+      AllMessages: [],  // 保存消息的数组
+      maxMessages: 500,  // 限制保存的消息数量
+      isClientDebugActive: true,  // 前端按钮激活状态
+      isServerDebugActive: true,  // 后端按钮激活状态
+      isErrorDebugActive: false,
+      isAtBottom: true,
+      keywordFilter: '',
+    };
+  },
+  created() {
+    syncDebugDialogLogs(this.AllMessages);
+    this.$bus.$on('SendConsoleLog', this.InsertClientDebug);
+    this.$bus.$on('SendDebugMessage', this.InsertServerDebug);
+  },
+  mounted() {
+  },
+  methods: {
+    InsertClientDebug(type, message) {
+      // 如果超过最大数量，则移除最早的消息
+      if (this.AllMessages.length >= this.maxMessages) {
+        this.AllMessages.shift();
+      }
+      // 获取当前时间戳并构造消息对象
+      const timestamp = new Date().toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+
+      const msg = { msgtype: type, msgtext: `[Client] ${timestamp} | ${message}`, msgfrom: 'Client' };
+      this.AllMessages.push(msg);
+      syncDebugDialogLogs(this.AllMessages);
+    },
+
+    InsertServerDebug(type, message) {
+      // 如果超过最大数量，则移除最早的消息
+      if (this.AllMessages.length >= this.maxMessages) {
+        this.AllMessages.shift();
+      }
+      // 获取当前时间戳并构造消息对象
+      const timestamp = new Date().toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+
+      const msg = { msgtype: type, msgtext: `[Server] ${timestamp} | ${message}`, msgfrom: 'Server' };
+      this.AllMessages.push(msg);
+      syncDebugDialogLogs(this.AllMessages);
+    },
+
+    toggleClientDebug() {
+      this.isClientDebugActive = !this.isClientDebugActive;
+    },
+
+    toggleServerDebug() {
+      this.isServerDebugActive = !this.isServerDebugActive;
+    },
+
+    toggleErrorDebug() {
+      this.isErrorDebugActive = !this.isErrorDebugActive;
+    },
+
+    clearMessages() {
+      this.AllMessages = [];  // 清空消息数组
+      syncDebugDialogLogs(this.AllMessages);
+    },
+
+    /** 复制当前列表中可见日志（受 Client/Server/仅错误 筛选影响） */
+    copyMessagesToClipboard() {
+      const messagesToSave = this.ShowMessages.map(msg => msg.msgtext).join('\n');
+      const ok = () => {
+        this.$bus.$emit('showMsgBox', this.$t('Messages copied to clipboard!'), 'success');
+      };
+      const fail = () => {
+        this.$bus.$emit('showMsgBox', this.$t('Failed to copy messages!'), 'error');
+      };
+
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(messagesToSave).then(ok).catch(() => {
+          this._copyMessagesWithClipboardJs(messagesToSave, ok, fail);
+        });
+        return;
+      }
+      this._copyMessagesWithClipboardJs(messagesToSave, ok, fail);
+    },
+
+    _copyMessagesWithClipboardJs(messagesToSave, onSuccess, onFail) {
+      const button = document.createElement('button');
+      button.setAttribute('data-clipboard-text', messagesToSave);
+      document.body.appendChild(button);
+      const clipboard = new Clipboard(button);
+      clipboard.on('success', () => {
+        onSuccess();
+        clipboard.destroy();
+        document.body.removeChild(button);
+      });
+      clipboard.on('error', (err) => {
+        console.error('Clipboard.js error: ', err);
+        onFail();
+        clipboard.destroy();
+        document.body.removeChild(button);
+      });
+      button.click();
+    },
+
+    dialogClose() {
+      this.$bus.$emit('toggleINDIDebugDialog');
+    },
+
+    getMsgStyle(msgtype) {
+      if (msgtype === 'info') {
+        return { color: 'white' };
+      } else if (msgtype === 'error') {
+        return { color: 'rgb(206, 14, 14)' };
+      } else if (msgtype === 'warning') {
+        return { color: 'rgb(255, 165, 0)' }; // 橙色用于警告消息
+      }
+      return {};
+    },
+
+    // 检查是否滚动到底部
+    checkIfScrolledToBottom() {
+      const container = this.$refs.messageContainer;
+      this.isAtBottom = container.scrollHeight - container.scrollTop === container.clientHeight;
+    },
+
+    // 滚动到底部
+    scrollToBottom() {
+      const container = this.$refs.messageContainer;
+      container.scrollTop = container.scrollHeight;
+    },
+
+    messageMatchesKeyword(msg) {
+      if (!this.keywordFilter) {
+        return true;
+      }
+      return msg.msgtext.toLowerCase().includes(this.keywordFilter.toLowerCase());
+    },
+
+  },
+  computed: {
+    ShowMessages() {
+      this.$nextTick(() => {
+        this.checkIfScrolledToBottom();
+      });
+
+      return this.AllMessages.filter(msg => {
+        // 仅显示符合条件的消息
+        if (this.isClientDebugActive && msg.msgfrom === 'Client') {
+          if (this.isErrorDebugActive && msg.msgtype != 'error') {
+            return false;
+          }
+          return this.messageMatchesKeyword(msg);
+        }
+        if (this.isServerDebugActive && msg.msgfrom === 'Server') {
+          if (this.isErrorDebugActive && msg.msgtype != 'error') {
+            return false;
+          }
+          return this.messageMatchesKeyword(msg);
+        }
+        return false;
+      });
+    },
+  },
+};
+</script>
+
+<style scoped>
+.indiDebugDialog {
+  pointer-events: auto;
+  position: fixed;
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
+  box-sizing: border-box;
+  overflow: hidden;
+  left: 50%;
+  width: 70%;
+  transform: translateX(-50%);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  user-select: none;
+}
+
+.dialog-enter-active {
+  animation: showPanelAnimation 0.3s forwards;
+}
+.dialog-leave-active {
+  animation: hidePanelAnimation 0.3s forwards;
+}
+
+@keyframes showPanelAnimation {
+  from {
+    bottom: 100%;
+    backdrop-filter: blur(0px);
+    background-color: rgba(64, 64, 64, 0.0);
+  }
+
+  to {
+    bottom: 70px;
+    backdrop-filter: blur(5px);
+    background-color: rgba(64, 64, 64, 0.3);
+  }
+}
+
+@keyframes hidePanelAnimation {
+  from {
+    bottom: 70px;
+    backdrop-filter: blur(5px);
+    background-color: rgba(64, 64, 64, 0.3);
+  }
+
+  to {
+    bottom: 100%;
+    backdrop-filter: blur(0px);
+    background-color: rgba(64, 64, 64, 0.0);
+  }
+}
+
+.debug-messages {
+  position:absolute;
+  top: 52px;
+  bottom: 10px;
+  left: 55px;
+  right: 55px;
+
+  background-color: rgba(0, 0, 0, 0.3);
+  box-sizing: border-box;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  border-radius: 5px;
+
+  pointer-events: auto;
+  color: white;
+  overflow: hidden;
+  overflow-y: auto;
+  padding: 5px;  /* 去掉内边距 */
+  margin: 0;   /* 去掉外边距 */
+  line-height: 0.1;  /* 设置适当的行间距（小于默认值） */
+  scroll-behavior: smooth;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  user-select: none;
+  overflow-x: auto; /* 允许水平滚动 */
+}
+
+.filter-bar {
+  position: absolute;
+  top: 10px;
+  left: 55px;
+  right: 55px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 1;
+}
+
+.keyword-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 12px;
+  color: white;
+  background-color: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  outline: none;
+  font-size: 13px;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.keyword-input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.keyword-input:focus {
+  border-color: rgba(255, 255, 255, 0.42);
+}
+
+.keyword-clear-button {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  color: white;
+  background-color: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+}
+
+.debug-messages p {
+  margin: 0;   /* 设置间距为0 */
+  line-height: 1;  /* 设置行间距为0.1 */
+  white-space: nowrap;
+}
+
+.clear-button {
+  position: fixed;
+  top: 66%;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  transform: translateY(-50%);
+
+  background-color: rgba(255, 0, 0, 0.3);
+  backdrop-filter: blur(5px);
+  box-sizing: border-box;
+  border-radius: 10px;
+
+  user-select: none;
+}
+
+.ToBottom-button-show {
+  position:absolute;
+  height: 0;
+  bottom: 11px;
+  left: 56px;
+  right: 56px;
+  opacity: 0;
+
+  background-color: rgba(125, 125, 125, 0.4);
+  backdrop-filter: blur(5px);
+  box-sizing: border-box;
+  border-radius: 5px;
+  color: white;
+
+  user-select: none;
+
+  animation: expandAnimation 0.3s forwards;
+}
+
+@keyframes expandAnimation {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: 20px;
+    opacity: 1;
+  }
+}
+
+.ToBottom-button-hide {
+  position:absolute;
+  height: 20px;
+  bottom: 11px;
+  left: 56px;
+  right: 56px;
+  opacity: 1;
+
+  background-color: rgba(125, 125, 125, 0.4);
+  backdrop-filter: blur(5px);
+  box-sizing: border-box;
+  border-radius: 5px;
+  color: rgba(0, 0, 0, 0);
+
+  animation: collapseAnimation 0.3s forwards;
+}
+
+@keyframes collapseAnimation {
+  from {
+    height: 20px;
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+.save-button {
+  position: fixed;
+  top: 33%;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  transform: translateY(-50%);
+
+  background-color: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(5px);
+  box-sizing: border-box;
+  border-radius: 10px;
+
+  user-select: none;
+}
+
+.btn-close {
+  position: absolute;
+  width: 25px;
+  height: 25px;
+  top: 10px;
+  right: 10px;
+
+  user-select: none;
+  background-color: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(5px);
+  box-sizing: border-box;
+  border: none;
+  border-radius: 50%;
+}
+
+.save-button:active,
+.btn-close:active,
+.ClientMsg-button:active,
+.ServerMsg-button:active,
+.ErrorMsg-button:active,
+.ToBottom-button-show:active,
+.clear-button:active {
+  background-color: rgba(255, 255, 255, 0.7);
+}
+
+.ErrorMsg-button {
+  position: fixed;
+  top: 25%;
+  left: 10px;
+  width: 40px;
+  height: 40px;
+  transform: translateY(-50%);
+
+  background-color: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(5px);
+  border-radius: 10px;
+
+  user-select: none;
+}
+
+.ServerMsg-button {
+  position: fixed;
+  top: 50%;
+  left: 10px;
+  width: 40px;
+  height: 40px;
+  transform: translateY(-50%);
+
+  background-color: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(5px);
+  border-radius: 10px;
+
+  user-select: none;
+}
+
+.ClientMsg-button {
+  position: fixed;
+  top: 75%;
+  left: 10px;
+  width: 40px;
+  height: 40px;
+  transform: translateY(-50%);
+
+  background-color: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(5px);
+  border-radius: 10px;
+
+  user-select: none;
+}
+
+</style>

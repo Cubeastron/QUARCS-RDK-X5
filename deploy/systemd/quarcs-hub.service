@@ -1,0 +1,20 @@
+[Unit]
+Description=QUARCS WebSocket hub (source 4b87977) on RDK X5
+After=network.target
+
+[Service]
+Type=exec
+User=quarcs-rdk
+Group=quarcs-rdk
+WorkingDirectory=/opt/quarcs/hub
+ExecStart=/usr/bin/node /opt/quarcs/hub/server.js
+Environment=QUARCS_TOTAL_VERSION=20260909
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

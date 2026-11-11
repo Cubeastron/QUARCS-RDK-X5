@@ -1,0 +1,415 @@
+<template>
+  <div class="Dial-Knob-Rect" :style="{ '--positionX': positionX + 'px', '--secondPositionX': secondPositionX + 'px', top: top + 'px', left: left + 'px', width: width + 'px', height: height + 'px' }" data-testid="ui-dial-knob-root">
+    <div class="indicator" @mousedown="startDrag" @mouseup="stopDrag" @touchstart="startDragMobile" @touchmove="onDragMobile" @touchend="stopDragMobile" data-testid="ui-components-dial-knob-act-start-drag"></div>
+    <div class="second-indicator" @mousedown="startSecondDrag" @mouseup="stopSecondDrag" @touchstart="startSecondDragMobile" @touchmove="onSecondDragMobile" @touchend="stopSecondDragMobile" data-testid="ui-components-dial-knob-act-start-second-drag"></div>
+
+    <!-- 底部下标：显示当前区间/全图的最小值与最大值 -->
+    <div class="dial-labels">
+      <span class="dial-label-min">{{ displayMin }}</span>
+      <span class="dial-label-max">{{ displayMax }}</span>
+    </div>
+  </div>
+</template>
+
+<script>
+export default {
+  data() {
+    return {
+      top: 5, // 初始位置的垂直坐标
+      left: 5, // 初始位置的水平坐标
+      width: 190, // 初始宽度
+      height: 80, // 初始高度
+
+      DialWidth: 1,
+      touchIndicatorWidth: 14,
+      
+      positionX: 0,
+      dragging: false,
+      startPositionX: 0,
+      
+      // 新滑块的数据
+      secondPositionX: 190,
+      secondDragging: false,
+      secondStartPositionX: 65535,
+
+      // 是否使用“有效区间模式”（与直方图的区间模式联动）
+      useEffectiveRange: true,
+      // 自动拉伸得到的固定区间（作为“区间模式”的基准）
+      autoMin: 0,
+      autoMax: 65535,
+      // 当前窗口实际使用的最小/最大值（由拨盘控制）
+      windowMin: 0,
+      windowMax: 65535,
+    };
+  },
+  computed: {
+    // 下标显示的左/右端点数值
+    displayMin() {
+      // 区间模式：显示固定的自动拉伸最小值；全图模式：0
+      if (this.useEffectiveRange && this.autoMax > this.autoMin) {
+        return this.autoMin;
+      }
+      return 0;
+    },
+    displayMax() {
+      // 区间模式：显示固定的自动拉伸最大值；全图模式：65535
+      if (this.useEffectiveRange && this.autoMax > this.autoMin) {
+        return this.autoMax;
+      }
+      return 65535;
+    },
+  },
+  created() {
+    this.$bus.$on('toggleHistogramPanel', this.setMaxWidth);
+    this.$bus.$on('ChangeDialPosition', this.ChangeDialPosition);
+    // 与直方图区间模式联动
+    this.$bus.$on('HistogramRangeMode', this.setRangeMode);
+    // 接收当前图像的自动拉伸范围，作为区间模式的固定范围
+    this.$bus.$on('AutoHistogramNum', this.setAutoRange);
+  },
+  mounted() {
+    window.addEventListener('resize', this.setMaxWidth);
+  },
+  beforeDestroy() {
+    window.removeEventListener('resize', this.setMaxWidth);
+    // 若组件销毁时仍处于拖拽中，确保清理全局监听，避免出现“粘鼠标/持续拖拽”的残留状态
+    this.dragging = false;
+    this.secondDragging = false;
+    document.removeEventListener("mousemove", this.onDrag);
+    document.removeEventListener("mouseup", this.stopDrag, true);
+    document.removeEventListener("touchmove", this.onDragMobile);
+    document.removeEventListener("touchend", this.stopDragMobile);
+    document.removeEventListener("mousemove", this.onSecondDrag);
+    document.removeEventListener("mouseup", this.stopSecondDrag, true);
+    document.removeEventListener("touchmove", this.onSecondDragMobile);
+    document.removeEventListener("touchend", this.stopSecondDragMobile);
+    window.removeEventListener("blur", this.stopDrag);
+    window.removeEventListener("blur", this.stopSecondDrag);
+  },
+  methods: {
+    buildExpandedDisplayRange(min, max) {
+      const safeMin = Number.isFinite(min) ? min : 0;
+      const safeMax = Number.isFinite(max) ? max : 65535;
+      const orderedMin = Math.max(0, Math.min(safeMin, safeMax));
+      const orderedMax = Math.min(65535, Math.max(safeMin, safeMax));
+      const span = orderedMax - orderedMin;
+      if (span <= 0) {
+        return {
+          min: orderedMin,
+          max: Math.min(65535, orderedMin + 1)
+        };
+      }
+
+      const padding = Math.round(span * 0.5);
+      return {
+        min: Math.max(0, orderedMin - padding),
+        max: Math.min(65535, orderedMax + padding)
+      };
+    },
+    setMaxWidth() {
+      const Width = window.innerWidth;
+      this.width = Math.min(Width - 350, 490);
+    },
+    startDrag(event) {
+      event.preventDefault(); // 阻止默认触摸事件
+      this.dragging = true;
+      this.startPositionX = event.clientX - this.positionX;
+      document.addEventListener("mousemove", this.onDrag);
+      document.addEventListener("mouseup", this.stopDrag, true);
+      // 关键：如果鼠标按住拖出浏览器/窗口外再松开，document 可能收不到 mouseup，
+      // 这里监听 window blur 来强制结束拖拽，避免“粘鼠标”
+      window.addEventListener("blur", this.stopDrag);
+    },
+    onDrag(event) {
+      if (this.dragging) {
+        // 某些场景 mouseup 会被组件内部 stopPropagation 截住；一旦检测到左键已松开，立即结束拖拽
+        if (typeof event.buttons === 'number' && event.buttons === 0) {
+          this.stopDrag();
+          return;
+        }
+        const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+        const newPositionX = clientX - this.startPositionX;
+
+        // 确保滑块在组件范围内，且不超过右侧滑块（保留 DialWidth 最小间距）
+        const maxX = Math.min(this.width - this.DialWidth, this.secondPositionX - this.DialWidth);
+        this.positionX = Math.max(0, Math.min(newPositionX, maxX));
+
+        if (this.secondPositionX - this.positionX < this.DialWidth) {
+          this.secondPositionX = this.positionX + this.DialWidth;
+        }
+
+        // console.log("Width:", this.width, "PositionX:", this.positionX, "SecondPositionX:", this.secondPositionX);
+      }
+    },
+    stopDrag() {
+      this.dragging = false;
+      document.removeEventListener("mousemove", this.onDrag);
+      document.removeEventListener("mouseup", this.stopDrag, true);
+      window.removeEventListener("blur", this.stopDrag);
+      
+      const HistMin = this.mappedWidth(this.positionX);
+      const HistMax = this.mappedWidth(this.secondPositionX);
+      console.log("Hist Num:", HistMin, HistMax, "(16-bit range)");
+      this.$bus.$emit('HandleHistogramNum', HistMin, HistMax);
+    },
+
+    startDragMobile(event) {
+      event.preventDefault();
+      this.dragging = true;
+      this.startPositionX = event.touches[0].clientX - this.positionX;
+      document.addEventListener("touchmove", this.onDragMobile);
+      document.addEventListener("touchend", this.stopDragMobile);
+      window.addEventListener("blur", this.stopDragMobile);
+    },
+    onDragMobile(event) {
+      if (this.dragging) {
+        const clientX = event.touches[0].clientX;
+        const newPositionX = clientX - this.startPositionX;
+        // 确保滑块在组件范围内，且不超过右侧滑块（保留 DialWidth 最小间距）
+        const maxX = Math.min(this.width - this.DialWidth, this.secondPositionX - this.DialWidth);
+        this.positionX = Math.max(0, Math.min(newPositionX, maxX));
+
+        if (this.secondPositionX - this.positionX < this.DialWidth) {
+          this.secondPositionX = this.positionX + this.DialWidth;
+        }
+
+        // console.log("Width:", this.width, "PositionX:", this.positionX, "SecondPositionX:", this.secondPositionX);
+      }
+    },
+    stopDragMobile() {
+      this.dragging = false;
+      document.removeEventListener("touchmove", this.onDragMobile);
+      document.removeEventListener("touchend", this.stopDragMobile);
+      window.removeEventListener("blur", this.stopDragMobile);
+
+      const HistMin = this.mappedWidth(this.positionX);
+      const HistMax = this.mappedWidth(this.secondPositionX);
+      console.log("Hist Num:", HistMin, HistMax, "(16-bit range)");
+      this.$bus.$emit('HandleHistogramNum', HistMin, HistMax);
+    },
+    
+    // 新滑块的方法
+    startSecondDrag(event) {
+      event.preventDefault(); // 阻止默认触摸事件
+      this.secondDragging = true;
+      this.secondStartPositionX = event.clientX - this.secondPositionX;
+      document.addEventListener("mousemove", this.onSecondDrag);
+      document.addEventListener("mouseup", this.stopSecondDrag, true);
+      // 同上：窗口失焦时强制结束，避免拖拽状态卡住
+      window.addEventListener("blur", this.stopSecondDrag);
+    },
+    onSecondDrag(event) {
+      if (this.secondDragging) {
+        if (typeof event.buttons === 'number' && event.buttons === 0) {
+          this.stopSecondDrag();
+          return;
+        }
+        const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+        const newSecondPositionX = clientX - this.secondStartPositionX;
+        
+        // 关键修复：更新正确的变量，使用一次赋值
+        this.secondPositionX = Math.max(this.positionX + this.DialWidth, 
+                                  Math.min(newSecondPositionX, this.width));
+        
+        // 保持最小间距
+        if (this.secondPositionX - this.positionX < this.DialWidth) {
+          this.positionX = this.secondPositionX - this.DialWidth;
+        }
+      }
+    },
+    stopSecondDrag() {
+      this.secondDragging = false;
+      document.removeEventListener("mousemove", this.onSecondDrag);
+      document.removeEventListener("mouseup", this.stopSecondDrag, true);
+      window.removeEventListener("blur", this.stopSecondDrag);
+      
+      const HistMin = this.mappedWidth(this.positionX);
+      const HistMax = this.mappedWidth(this.secondPositionX);
+      console.log("Hist Num:", HistMin, HistMax, "(16-bit range)");
+      this.$bus.$emit('HandleHistogramNum', HistMin, HistMax);
+    },
+
+    startSecondDragMobile(event) {
+      event.preventDefault();
+      this.secondDragging = true;
+      this.secondStartPositionX = event.touches[0].clientX - this.secondPositionX;
+      document.addEventListener("touchmove", this.onSecondDragMobile);
+      document.addEventListener("touchend", this.stopSecondDragMobile);
+      window.addEventListener("blur", this.stopSecondDragMobile);
+    },
+    onSecondDragMobile(event) {
+      if (this.secondDragging) {
+        const clientX = event.touches[0].clientX;
+        const newSecondPositionX = clientX - this.secondStartPositionX;
+        // 确保滑块在组件范围内，且不小于左侧滑块（保留 DialWidth 最小间距）
+        this.secondPositionX = Math.max(
+          this.positionX + this.DialWidth,
+          Math.min(newSecondPositionX, this.width)
+        );
+
+        if (this.secondPositionX - this.positionX < this.DialWidth) {
+          this.positionX = this.secondPositionX - this.DialWidth;
+        }
+
+        // console.log("Width:", this.width, "PositionX:", this.positionX, "SecondPositionX:", this.secondPositionX);
+      }
+    },
+    stopSecondDragMobile() {
+      this.secondDragging = false;
+      document.removeEventListener("touchmove", this.onSecondDragMobile);
+      document.removeEventListener("touchend", this.stopSecondDragMobile);
+      window.removeEventListener("blur", this.stopSecondDragMobile);
+
+      const HistMin = this.mappedWidth(this.positionX);
+      const HistMax = this.mappedWidth(this.secondPositionX);
+      console.log("Hist Num:", HistMin, HistMax, "(16-bit range)");
+      this.$bus.$emit('HandleHistogramNum', HistMin, HistMax);
+    },
+
+    ChangeDialPosition(min, max) {
+      // 外部请求设置当前窗口的最小/最大值（包括自动拉伸和手动调整）
+      this.windowMin = min;
+      this.windowMax = max;
+
+      if (this.useEffectiveRange && this.autoMax > this.autoMin) {
+        // 区间模式：相对于固定的自动拉伸范围 [autoMin, autoMax] 计算滑块位置
+        const range = this.autoMax - this.autoMin || 1;
+        const tMin = (min - this.autoMin) / range;
+        const tMax = (max - this.autoMin) / range;
+        this.positionX = Math.round(this.width * Math.max(0, Math.min(tMin, 1)));
+        this.secondPositionX = Math.round(this.width * Math.max(0, Math.min(tMax, 1)));
+      } else {
+        // 全图模式：拨盘映射到全 0-65535
+        this.positionX = Math.round((min / 65535) * this.width);
+        this.secondPositionX = Math.round((max / 65535) * this.width);
+      }
+    },
+    
+    mappedWidth(position) {
+      // 根据模式，将拨盘位置映射回真实 16bit 灰度值
+      if (this.useEffectiveRange && this.autoMax > this.autoMin) {
+        const t = this.width > 0 ? (position / this.width) : 0;
+        return Math.round(this.autoMin + t * (this.autoMax - this.autoMin));
+      }
+      // 全图模式：映射到 0-65535
+      return Math.round((position / this.width) * 65535);
+    },
+
+    // 与直方图区间模式同步
+    setRangeMode(flag) {
+      this.useEffectiveRange = flag;
+      const modeText = flag ? '区间模式' : '全图模式';
+      console.log(`[Dial-Knob] 切换到${modeText}: autoRange=[${this.autoMin}, ${this.autoMax}], window=[${this.windowMin}, ${this.windowMax}]`);
+      // 切换模式时，重新根据当前窗口刷新滑块位置
+      this.ChangeDialPosition(this.windowMin, this.windowMax);
+    },
+
+    // 由自动拉伸结果设置固定区间
+    setAutoRange(min, max) {
+      const expandedRange = this.buildExpandedDisplayRange(min, max);
+
+      // 区间模式下刻度显示扩大，但窗口本身仍保持真实自动拉伸黑白点
+      this.autoMin = expandedRange.min;
+      this.autoMax = expandedRange.max;
+      this.windowMin = min;
+      this.windowMax = max;
+      this.ChangeDialPosition(this.windowMin, this.windowMax);
+    },
+  },
+};
+</script>
+
+<style scoped>
+.Dial-Knob-Rect {
+  width: 200px;
+  height: 80px;
+
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+  /* overflow: hidden; */
+  
+  background-color: transparent;
+  box-sizing: border-box; /* 设置box-sizing为border-box */
+}
+
+.dial-labels {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-size: 10px;
+  color: #ffffff;
+  pointer-events: none; /* 避免挡住拖动事件 */
+}
+
+.dial-label-min,
+.dial-label-max {
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+}
+
+.indicator {
+  width: 14px;
+  height: 80px;
+  border-radius: 1px;
+  position: absolute;
+  top: 50%;
+  left: var(--positionX);
+  transform: translate(-100%, -50%);
+  
+  background-color: rgba(75, 155, 250, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(5px);
+  box-sizing: border-box;
+}
+
+.second-indicator {
+  width: 14px;
+  height: 80px;
+  border-radius: 1px;
+  position: absolute;
+  top: 50%;
+  left: var(--secondPositionX);
+  transform: translate(0, -50%);
+  
+  background-color: rgba(255, 0, 0, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(5px);
+  box-sizing: border-box;
+}
+
+.indicator:active:active {
+  width: 14px;
+  height: 80px;
+  border-radius: 1px;
+  position: absolute;
+  top: 50%;
+  left: var(--positionX);
+  transform: translate(-100%, -50%);
+  
+  background-color: rgba(75, 155, 250, 1);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(5px);
+  box-sizing: border-box;
+}
+
+
+.second-indicator:active {
+  width: 14px;
+  height: 80px;
+  border-radius: 1px;
+  position: absolute;
+  top: 50%;
+  left: var(--secondPositionX);
+  transform: translate(0, -50%);
+  
+  background-color: rgba(255, 0, 0, 1);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(5px);
+  box-sizing: border-box;
+}
+</style>

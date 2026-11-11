@@ -1,0 +1,5933 @@
+<template>
+  <div
+    class="polar-alignment-root"
+    data-testid="pa-root"
+    :data-state="isCalibrationRunning ? 'running' : 'idle'"
+  >
+    <!-- 最小化状态 -->
+    <div
+      v-if="visible && isMinimized"
+      class="polar-alignment-minimized"
+      :class="{ 'dragging': isDraggingState }"
+      :style="{ left: position.x + 'px', top: position.y + 'px' }"
+      data-testid="pa-minimized"
+      :data-state="isMinimized ? 'minimized' : 'expanded'"
+    >
+      <div class="minimized-header" data-testid="pa-minimized-header">
+        <div
+          class="minimized-drag-area"
+          @mousedown="startDrag"
+          @touchstart.stop.prevent="startDrag"
+          data-testid="pa-minimized-drag-handle"
+        >
+          <v-icon class="minimized-icon" data-testid="pa-minimized-icon">mdi-compass-rose</v-icon>
+          <span class="minimized-title" data-testid="pa-minimized-title">{{ $t('Polar Alignment') }}</span>
+        </div>
+
+        <div class="minimized-controls" data-testid="pa-minimized-controls">
+          <button
+            class="minimized-btn"
+            @click="toggleMinimize"
+            :title="$t('Expand')"
+            data-testid="pa-btn-expand-from-minimized"
+          >
+            <v-icon data-testid="pa-icon-expand-from-minimized">mdi-chevron-up</v-icon>
+          </button>
+        </div>
+      </div>
+
+      <div class="minimized-status" data-testid="pa-minimized-status">
+        <div
+          class="status-indicator"
+          :class="{ 'online': isConnected }"
+          data-testid="pa-connection-indicator-minimized"
+          :data-state="isConnected ? 'connected' : 'disconnected'"
+        ></div>
+        <span class="status-text" data-testid="pa-connection-text-minimized">
+          {{ isConnected ? $t('Connected') : $t('Disconnected') }}
+        </span>
+      </div>
+    </div>
+
+    <!-- 完整界面 -->
+    <div
+      v-else-if="visible"
+      class="polar-alignment-widget"
+      :class="{ 'collapsed': isCollapsed, 'dragging': isDraggingState }"
+      :style="{
+        left: position.x + 'px',
+        top: position.y + 'px',
+        '--pa-ui-scale': uiScale,
+        '--pa-x-scale': widthScale,
+        '--pa-y-scale': heightScale,
+        pointerEvents: (showTrajectoryOverlay && overlayMode === 'fullscreen' ? 'none' : 'auto')
+      }"
+      data-testid="pa-widget"
+      :data-state="isCollapsed ? 'collapsed' : 'expanded'"
+    >
+      <!-- 拖动手柄 -->
+      <div class="widget-header" data-testid="pa-header">
+        <div
+          class="header-drag-area"
+          @mousedown="startDrag"
+          @touchstart.stop.prevent="startDrag"
+          data-testid="pa-header-drag-handle"
+        >
+          <div class="header-left" data-testid="pa-header-left">
+            <v-icon class="header-icon" data-testid="pa-header-icon">mdi-compass-rose</v-icon>
+            <span class="header-title" data-testid="pa-header-title">{{ $t('Polar Alignment Calibration') }}</span>
+            <div class="connection-indicator" data-testid="pa-connection-indicator">
+              <div
+                class="status-dot"
+                :class="{ 'online': isConnected }"
+                data-testid="pa-connection-dot"
+                :data-state="isConnected ? 'connected' : 'disconnected'"
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="header-controls" data-testid="pa-header-controls">
+          <button
+            class="header-btn"
+            @click="toggleCollapse"
+            :title="isCollapsed ? $t('Expand') : $t('Collapse')"
+            data-testid="pa-btn-toggle-collapse"
+          >
+            <v-icon data-testid="pa-icon-toggle-collapse">
+              {{ isCollapsed ? 'mdi-chevron-down' : 'mdi-chevron-up' }}
+            </v-icon>
+          </button>
+
+          <button
+            class="header-btn trajectory-header-btn"
+            :class="{ 'trajectory-active': showTrajectoryOverlay }"
+            @click="toggleTrajectoryOverlay"
+            :title="showTrajectoryOverlay ? $t('Hide Trajectory Canvas') : $t('Show Trajectory Canvas')"
+            data-testid="pa-btn-toggle-trajectory"
+            :data-state="showTrajectoryOverlay ? 'shown' : 'hidden'"
+          >
+            <v-icon data-testid="pa-icon-toggle-trajectory">
+              {{ showTrajectoryOverlay ? 'mdi-vector-polyline-remove' : 'mdi-vector-polyline' }}
+            </v-icon>
+          </button>
+
+          <button
+            class="header-btn pole-master-header-btn"
+            :class="{ 'pole-master-active': showPoleMasterPanel }"
+            @click="togglePoleMasterPanel"
+            :title="showPoleMasterPanel ? '关闭电子极轴镜界面' : '打开电子极轴镜界面'"
+            data-testid="pa-btn-toggle-pole-master"
+            :data-state="showPoleMasterPanel ? 'shown' : 'hidden'"
+          >
+            <v-icon data-testid="pa-icon-toggle-pole-master">mdi-camera-iris</v-icon>
+          </button>
+
+          <button
+            class="header-btn"
+            @click="toggleMinimize"
+            :title="$t('Minimize')"
+            data-testid="pa-btn-minimize"
+          >
+            <v-icon data-testid="pa-icon-minimize">mdi-minus</v-icon>
+          </button>
+        </div>
+      </div>
+
+      <PoleMasterPolarAlignmentPanel
+        v-if="showPoleMasterPanel && !isCollapsed"
+        :running="isPoleMasterCalibrationActive"
+        :state-number="poleMasterState"
+        :message="poleMasterMessage"
+        :progress="poleMasterProgress"
+        :guide="poleMasterGuide"
+        :frame="poleMasterFrame"
+        :overlay="poleMasterOverlay"
+        @stop="stopAutoCalibration"
+        @frame-log="addPoleMasterFrameLog"
+        data-testid="pa-pole-master-panel"
+      />
+
+      <!-- 收缩状态内容 -->
+      <div
+        v-else-if="isCollapsed"
+        class="widget-content collapsed"
+        :class="{ 'dragging': isDraggingState }"
+        data-testid="pa-content-collapsed"
+      >
+        <div class="collapsed-info" data-testid="pa-collapsed-info">
+          <template v-if="showPoleMasterPanel">
+            <div class="collapsed-pole-master-error" data-testid="pa-collapsed-pole-master-error">
+              <span class="status-label">误差</span>
+              <span
+                class="status-value"
+                :class="{ 'needs-adjustment': poleMasterErrorArcsecNeedsAdjustment }"
+                data-testid="pa-collapsed-pole-master-error-value"
+              >
+                {{ formattedPoleMasterErrorArcsec }}
+              </span>
+            </div>
+          </template>
+          <template v-else>
+          <div class="collapsed-progress" data-testid="pa-collapsed-progress">
+            <div
+              class="progress-circle"
+              :style="{ '--progress': progressPercentage + '%' }"
+              data-testid="pa-collapsed-progress-circle"
+              :data-progress="Math.round(progressPercentage)"
+            >
+              <span class="progress-text" data-testid="pa-collapsed-progress-text">
+                {{ Math.round(progressPercentage) }}%
+              </span>
+            </div>
+          </div>
+
+          <div class="collapsed-status" data-testid="pa-collapsed-status">
+            <div class="status-item" data-testid="pa-collapsed-azimuth">
+              <span class="status-label" data-testid="pa-collapsed-azimuth-label">方位角:</span>
+              <span
+                class="status-value"
+                :class="{ 'needs-adjustment': needsAzimuthAdjustment }"
+                data-testid="pa-collapsed-azimuth-value"
+                :data-state="needsAzimuthAdjustment ? 'needs-adjustment' : 'ok'"
+              >
+                {{ formatAdjustmentValue(adjustment.azimuth) }}
+              </span>
+            </div>
+
+            <div class="status-item" data-testid="pa-collapsed-altitude">
+              <span class="status-label" data-testid="pa-collapsed-altitude-label">高度角:</span>
+              <span
+                class="status-value"
+                :class="{ 'needs-adjustment': needsAltitudeAdjustment }"
+                data-testid="pa-collapsed-altitude-value"
+                :data-state="needsAltitudeAdjustment ? 'needs-adjustment' : 'ok'"
+              >
+                {{ formatAdjustmentValue(adjustment.altitude) }}
+              </span>
+            </div>
+          </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- 展开状态内容 -->
+      <div
+        v-else
+        class="widget-content expanded"
+        :class="{ 'dragging': isDraggingState }"
+        data-testid="pa-content-expanded"
+      >
+        <div class="content-sections" data-testid="pa-sections">
+          <!-- 校准步骤进度条 -->
+          <div class="calibration-progress" data-testid="pa-calibration-progress">
+            <div class="progress-header" data-testid="pa-progress-header">
+              <div class="progress-title" data-testid="pa-progress-title">{{ $t('Calibration Progress') }}</div>
+              <div
+                v-if="progressPercentage >= 75 && progressPercentage < 95"
+                class="calibration-loop-info"
+                data-testid="pa-calibration-loop-info"
+                :data-loop="calibrationLoopCount"
+              >
+                {{ $t('Calibration Round', [calibrationLoopCount]) }}
+              </div>
+            </div>
+
+            <div class="progress-bar" data-testid="pa-progress-bar">
+              <div
+                class="progress-fill"
+                :style="{ width: progressPercentage + '%' }"
+                data-testid="pa-progress-fill"
+                :data-progress="Math.round(progressPercentage)"
+              ></div>
+
+              <div class="progress-nodes" data-testid="pa-progress-nodes">
+                <!-- 初始化节点 -->
+                <div class="progress-node" :class="getStepClass(0)" data-testid="pa-step-initialization">
+                  <div class="node-circle" data-testid="pa-step-initialization-circle">
+                    <v-icon v-if="progressPercentage >= 15">mdi-check</v-icon>
+                    <v-icon v-else>mdi-cog</v-icon>
+                  </div>
+                  <div class="node-label" data-testid="pa-step-initialization-label">{{ $t('Initialization') }}</div>
+                </div>
+
+                <!-- 第一次校准节点 -->
+                <div class="progress-node" :class="getStepClass(1)" data-testid="pa-step-calibration-1">
+                  <div class="node-circle" data-testid="pa-step-calibration-1-circle">
+                    <v-icon v-if="progressPercentage >= 25">mdi-check</v-icon>
+                    <span v-else>1</span>
+                  </div>
+                  <div class="node-label" data-testid="pa-step-calibration-1-label">{{ $t('First Calibration') }}</div>
+                </div>
+
+                <!-- 第二次校准节点 -->
+                <div class="progress-node" :class="getStepClass(2)" data-testid="pa-step-calibration-2">
+                  <div class="node-circle" data-testid="pa-step-calibration-2-circle">
+                    <v-icon v-if="progressPercentage >= 50">mdi-check</v-icon>
+                    <span v-else>2</span>
+                  </div>
+                  <div class="node-label" data-testid="pa-step-calibration-2-label">{{ $t('Second Calibration') }}</div>
+                </div>
+
+                <!-- 第三次校准节点 -->
+                <div class="progress-node" :class="getStepClass(3)" data-testid="pa-step-calibration-3">
+                  <div class="node-circle" data-testid="pa-step-calibration-3-circle">
+                    <v-icon v-if="progressPercentage >= 75">mdi-check</v-icon>
+                    <span v-else>3</span>
+                  </div>
+                  <div class="node-label" data-testid="pa-step-calibration-3-label">{{ $t('Third Calibration') }}</div>
+                </div>
+
+                <!-- 校准调整节点 -->
+                <div
+                  class="progress-node calibration-node"
+                  :class="{ 'active': progressPercentage >= 75, 'looping': progressPercentage >= 75 && progressPercentage < 95 }"
+                  data-testid="pa-step-guidance-calibration"
+                  :data-state="progressPercentage >= 95 ? 'done' : (progressPercentage >= 75 ? 'running' : 'pending')"
+                >
+                  <div class="node-circle" data-testid="pa-step-guidance-calibration-circle">
+                    <v-icon v-if="progressPercentage >= 95">mdi-check</v-icon>
+                    <v-icon v-else-if="progressPercentage >= 75">mdi-refresh</v-icon>
+                    <v-icon v-else>mdi-tune</v-icon>
+                  </div>
+                  <div class="node-label" data-testid="pa-step-guidance-calibration-label">{{ $t('Calibration') }}</div>
+                </div>
+
+                <!-- 最终验证节点 -->
+                <div
+                  class="progress-node verification-node"
+                  :class="{ 'active': progressPercentage >= 95 }"
+                  data-testid="pa-step-verification"
+                  :data-state="isPolarAligned ? 'aligned' : 'not-aligned'"
+                >
+                  <div class="node-circle" data-testid="pa-step-verification-circle">
+                    <v-icon v-if="isPolarAligned">mdi-check</v-icon>
+                    <v-icon v-else>mdi-target</v-icon>
+                  </div>
+                  <div class="node-label" data-testid="pa-step-verification-label">{{ $t('Verification') }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 日志显示 -->
+          <div class="log-section" data-testid="pa-log-section">
+            <div class="log-display" data-testid="pa-log-display">
+              <div
+                v-if="displayLogs.length > 0"
+                class="latest-log"
+                :class="displayLogs[0].level"
+                data-testid="pa-latest-log"
+                :data-level="displayLogs[0].level"
+              >
+                <div class="log-timestamp" data-testid="pa-latest-log-timestamp">
+                  {{ formatTime(displayLogs[0].timestamp) }}
+                </div>
+                <div class="log-message" data-testid="pa-latest-log-message">
+                  {{ displayLogs[0].message }}
+                </div>
+              </div>
+
+              <div v-else class="log-empty" data-testid="pa-log-empty">
+                {{ $t('No activity logs') }}
+              </div>
+            </div>
+          </div>
+
+          <!-- 位置信息 -->
+          <div class="position-section" data-testid="pa-position-section">
+            <div class="position-grid" data-testid="pa-position-grid">
+              <div class="position-cell current" data-testid="pa-pos-current-ra">
+                <div class="cell-label" data-testid="pa-pos-current-ra-label">{{ $t('current RA') }}</div>
+                <div class="cell-value" data-testid="pa-pos-current-ra-value">{{ currentPosition.ra }}</div>
+              </div>
+
+              <div class="position-cell current" data-testid="pa-pos-current-dec">
+                <div class="cell-label" data-testid="pa-pos-current-dec-label">{{ $t('current DEC') }}</div>
+                <div class="cell-value" data-testid="pa-pos-current-dec-value">{{ currentPosition.dec }}</div>
+              </div>
+
+              <div class="position-cell target" data-testid="pa-pos-target-ra">
+                <div class="cell-label" data-testid="pa-pos-target-ra-label">{{ $t('target RA') }}</div>
+                <div class="cell-value" data-testid="pa-pos-target-ra-value">{{ targetPosition.ra }}</div>
+              </div>
+
+              <div class="position-cell target" data-testid="pa-pos-target-dec">
+                <div class="cell-label" data-testid="pa-pos-target-dec-label">{{ $t('target DEC') }}</div>
+                <div class="cell-value" data-testid="pa-pos-target-dec-value">{{ targetPosition.dec }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 调整指导 -->
+          <div class="adjustment-section" data-testid="pa-adjustment-section">
+            <div class="adjustment-instructions" data-testid="pa-adjustment-instructions">
+              <div
+                class="adjustment-item"
+                :class="{ 'active': needsAzimuthAdjustment }"
+                data-testid="pa-adjust-azimuth"
+                :data-state="needsAzimuthAdjustment ? 'active' : 'inactive'"
+              >
+                <div class="adjustment-icon" data-testid="pa-adjust-azimuth-icon">
+                  <v-icon>mdi-compass</v-icon>
+                </div>
+
+                <div class="adjustment-details" data-testid="pa-adjust-azimuth-details">
+                  <div class="adjustment-header" data-testid="pa-adjust-azimuth-header">
+                    <span class="adjustment-type" data-testid="pa-adjust-azimuth-type">{{ $t('Azimuth') }}</span>
+                    <span class="adjustment-value" data-testid="pa-adjust-azimuth-value">
+                      {{ formatAdjustmentValue(adjustment.azimuth) }}
+                    </span>
+                  </div>
+
+                  <div class="adjustment-action" data-testid="pa-adjust-azimuth-action">
+                    {{ needsAzimuthAdjustment ? getAzimuthAction(adjustment.azimuth) : $t('No adjustment needed') }}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                class="adjustment-item"
+                :class="{ 'active': needsAltitudeAdjustment }"
+                data-testid="pa-adjust-altitude"
+                :data-state="needsAltitudeAdjustment ? 'active' : 'inactive'"
+              >
+                <div class="adjustment-icon" data-testid="pa-adjust-altitude-icon">
+                  <v-icon>mdi-compass</v-icon>
+                </div>
+
+                <div class="adjustment-details" data-testid="pa-adjust-altitude-details">
+                  <div class="adjustment-header" data-testid="pa-adjust-altitude-header">
+                    <span class="adjustment-type" data-testid="pa-adjust-altitude-type">{{ $t('Altitude') }}</span>
+                    <span class="adjustment-value" data-testid="pa-adjust-altitude-value">
+                      {{ formatAdjustmentValue(adjustment.altitude) }}
+                    </span>
+                  </div>
+
+                  <div class="adjustment-action" data-testid="pa-adjust-altitude-action">
+                    {{ needsAltitudeAdjustment ? getAltitudeAction(adjustment.altitude) : $t('No adjustment needed') }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 控制按钮 -->
+          <div class="control-section" data-testid="pa-control-section">
+            <div class="action-buttons" data-testid="pa-action-buttons">
+              <button
+                class="action-btn primary"
+                @click="startAutoCalibration()"
+                :disabled="!canAutoCalibrate"
+                data-testid="pa-btn-auto-calibration"
+                :data-state="isCalibrationRunning ? 'running' : 'stopped'"
+                :data-mode="isPoleMasterCalibrationActive ? 'pole-master' : 'standard'"
+              >
+                <v-icon v-if="!isCalibrationRunning">mdi-play-circle</v-icon>
+                <v-icon v-else>mdi-stop-circle</v-icon>
+                <span data-testid="pa-btn-auto-calibration-text">
+                  {{ isCalibrationRunning ? $t('Stop Calibration') : $t('Start Auto Calibration') }}
+                </span>
+              </button>
+              <button
+                class="action-btn simulation"
+                @click="startPoleMasterSimulation()"
+                :disabled="isCalibrationRunning && !isPoleMasterSimulationRunning"
+                data-testid="pa-btn-pole-master-simulation"
+                :data-state="isPoleMasterSimulationRunning ? 'running' : 'stopped'"
+              >
+                <v-icon v-if="!isPoleMasterSimulationRunning">mdi-flask-outline</v-icon>
+                <v-icon v-else>mdi-stop-circle</v-icon>
+                <span data-testid="pa-btn-pole-master-simulation-text">
+                  {{ isPoleMasterSimulationRunning ? '停止模拟' : '模拟测试' }}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 指导调整阶段循环进度条（右下角，独立于控制面板） -->
+    <div v-if="visible" class="guidance-progress-indicator" data-testid="pa-guidance-indicator">
+      <div
+        class="guidance-progress-circle"
+        :class="[
+          `status-${guidanceStepStatus}`,
+          { 'animating': guidanceStep !== null && isCalibrationRunning && guidanceStepStatus === 'normal' },
+          { 'success-animation': guidanceStepStatus === 'success' },
+          { 'error-animation': guidanceStepStatus === 'error' }
+        ]"
+        data-testid="pa-guidance-circle"
+        :data-status="guidanceStepStatus"
+        :data-step="guidanceStep"
+      >
+        <svg class="progress-svg" viewBox="0 0 100 100" data-testid="pa-guidance-svg">
+          <circle class="progress-bg" cx="50" cy="50" r="45" data-testid="pa-guidance-bg"></circle>
+          <circle
+            class="progress-bar"
+            cx="50"
+            cy="50"
+            r="45"
+            :style="{ strokeDasharray: '283', strokeDashoffset: getProgressOffset() }"
+            data-testid="pa-guidance-bar"
+          ></circle>
+        </svg>
+
+        <div class="progress-content" data-testid="pa-guidance-content">
+          <v-icon class="step-icon" data-testid="pa-guidance-step-icon">{{ getStepIcon(guidanceStep) }}</v-icon>
+          <div class="step-description" data-testid="pa-guidance-step-description">
+            {{ getStepDescription(guidanceStep, guidanceStepStatus) }}
+          </div>
+          <div
+            v-if="guidanceStarCount >= 0"
+            class="star-count"
+            data-testid="pa-guidance-star-count"
+            :data-stars="guidanceStarCount"
+          >
+            {{ guidanceStarCount }} {{ $t('Stars') }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 轨迹画布：全屏模式 -->
+    <div
+      v-if="visible && showTrajectoryOverlay && overlayMode === 'fullscreen'"
+      class="trajectory-overlay"
+      @wheel.prevent="onOverlayWheel"
+      @mousedown.stop
+      @touchstart.stop
+      data-testid="pa-trajectory-overlay-fullscreen"
+    >
+      <canvas ref="trajectoryCanvas" data-testid="pa-trajectory-canvas-fullscreen"></canvas>
+
+      <button
+        class="overlay-close-btn"
+        @click.stop="toggleTrajectoryOverlay"
+        :title="$t('Hide Trajectory Canvas')"
+        data-testid="pa-btn-trajectory-close"
+      >
+        <v-icon>mdi-close</v-icon>
+      </button>
+
+      <div class="overlay-hint" data-testid="pa-trajectory-hint">{{ $t('Trajectory.Instruction') }}</div>
+
+      <div class="overlay-panel" data-testid="pa-trajectory-panel">
+        <div class="panel-row" data-testid="pa-trajectory-panel-current">
+          <span class="panel-label" data-testid="pa-trajectory-panel-current-label">{{ $t('Current') }}:</span>
+          <span class="panel-value" data-testid="pa-trajectory-panel-current-value">
+            RA {{ currentPosition.ra }} / DEC {{ currentPosition.dec }}
+          </span>
+        </div>
+
+        <div class="panel-row" data-testid="pa-trajectory-panel-target">
+          <span class="panel-label" data-testid="pa-trajectory-panel-target-label">{{ $t('Target') }}:</span>
+          <span class="panel-value" data-testid="pa-trajectory-panel-target-value">
+            RA {{ targetPosition.ra }} / DEC {{ targetPosition.dec }}
+          </span>
+        </div>
+
+        <div class="panel-actions" data-testid="pa-trajectory-panel-actions">
+          <button class="panel-btn" @click.stop="clearOldTrajectory" data-testid="pa-btn-clear-old-trajectory">
+            {{ $t('Clear Old Trajectory') }}
+          </button>
+          <button class="panel-btn" @click.stop="switchToWindowed" data-testid="pa-btn-switch-to-windowed">
+            {{ $t('Switch to Windowed Mode') }}
+          </button>
+        </div>
+      </div>
+
+      <div class="trajectory-status-counter" data-testid="pa-trajectory-solve-stats">
+        <span class="panel-label">{{ $t('Solve Stats') }}:</span>
+        <span class="panel-value">{{ guidanceSolveStats.success }} / {{ guidanceSolveStats.total }}</span>
+      </div>
+    </div>
+
+    <!-- 轨迹画布：窗口模式 -->
+    <div
+      v-if="visible && showTrajectoryOverlay && overlayMode === 'windowed'"
+      class="trajectory-window"
+      :style="{ left: windowedRect.x + 'px', top: windowedRect.y + 'px', width: windowedRect.width + 'px', height: windowedRect.height + 'px' }"
+      @mousedown.stop
+      @touchstart.stop
+      data-testid="pa-trajectory-overlay-windowed"
+    >
+      <div class="window-header" @mousedown.stop="startWindowDrag" @touchstart.stop="startWindowDrag" data-testid="pa-trajectory-window-header">
+        <span class="window-title" data-testid="pa-trajectory-window-title">{{ $t('Trajectory') }}</span>
+
+        <div class="window-actions" data-testid="pa-trajectory-window-actions">
+          <button class="panel-btn small" @click.stop="switchToFullscreen" data-testid="pa-btn-switch-to-fullscreen">
+            {{ $t('Switch to Fullscreen Mode') }}
+          </button>
+          <button class="panel-btn small" @click.stop="clearOldTrajectory" data-testid="pa-btn-clear-old-trajectory-windowed">
+            {{ $t('Clear Old Trajectory') }}
+          </button>
+          <button
+            class="panel-btn small"
+            @click.stop="toggleTrajectoryOverlay"
+            :title="$t('Hide Trajectory Canvas')"
+            data-testid="pa-btn-trajectory-close-windowed"
+          >
+            <v-icon>mdi-close</v-icon>
+          </button>
+        </div>
+      </div>
+
+      <div class="window-content" data-testid="pa-trajectory-window-content">
+        <canvas ref="trajectoryCanvas" data-testid="pa-trajectory-canvas-windowed"></canvas>
+        <div class="trajectory-status-counter windowed" data-testid="pa-trajectory-solve-stats-windowed">
+          <span class="panel-label">{{ $t('Solve Stats') }}:</span>
+          <span class="panel-value">{{ guidanceSolveStats.success }} / {{ guidanceSolveStats.total }}</span>
+        </div>
+      </div>
+    </div>
+
+    <v-dialog v-model="showCameraSelectDialog" persistent max-width="420" data-testid="pa-camera-select-dialog">
+      <v-card data-testid="pa-camera-select-card">
+        <v-card-title class="text-h6" data-testid="pa-camera-select-title">选择极轴校准相机</v-card-title>
+        <v-card-text data-testid="pa-camera-select-body">
+          多个相机均已连接，请选择用于自动极轴校准的相机。
+          <div style="margin-top: 8px; color: #90a4ae;" data-testid="pa-camera-select-countdown">
+            {{ cameraSelectCountdown }} 秒后默认使用{{ polarRoleLabel(cameraSelectDefaultRole) }}
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn
+            v-if="cameraSelectAvailableRoles.includes('PoleCamera')"
+            text
+            color="primary"
+            @click="selectPolarCameraRole('PoleCamera')"
+            data-testid="pa-camera-select-pole"
+          >电子极轴镜</v-btn>
+          <v-btn
+            v-if="cameraSelectAvailableRoles.includes('MainCamera')"
+            text
+            color="primary"
+            @click="selectPolarCameraRole('MainCamera')"
+            data-testid="pa-camera-select-main"
+          >主相机</v-btn>
+          <v-btn
+            v-if="cameraSelectAvailableRoles.includes('Guider')"
+            text
+            color="primary"
+            @click="selectPolarCameraRole('Guider')"
+            data-testid="pa-camera-select-guider"
+          >导星镜</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog
+      v-model="showPrereqDialog"
+      persistent
+      max-width="520"
+      data-testid="pa-prereq-dialog"
+      :data-state="showPrereqDialog ? 'open' : 'closed'"
+      :data-selected-role="selectedPolarCameraRole"
+    >
+      <v-card data-testid="pa-prereq-card" :data-selected-role="selectedPolarCameraRole">
+        <v-card-title class="text-h6" data-testid="pa-prereq-title">补充极轴校准参数</v-card-title>
+        <v-card-text data-testid="pa-prereq-body">
+          <v-text-field
+            v-model="prereqForm.latitude"
+            label="纬度 (°)"
+            type="number"
+            dense
+            outlined
+            data-testid="pa-prereq-latitude"
+          />
+          <v-text-field
+            v-model="prereqForm.longitude"
+            label="经度 (°)"
+            type="number"
+            dense
+            outlined
+            data-testid="pa-prereq-longitude"
+          />
+          <v-text-field
+            v-model="prereqForm.mainFocalLength"
+            label="主相机焦距 (mm)"
+            type="number"
+            dense
+            outlined
+            data-testid="pa-prereq-main-focal"
+          />
+          <v-text-field
+            v-model="prereqForm.guiderFocalLength"
+            label="导星镜焦距 (mm)"
+            type="number"
+            dense
+            outlined
+            data-testid="pa-prereq-guider-focal"
+          />
+          <v-text-field
+            v-model="prereqForm.poleFocalLength"
+            label="电子极轴镜焦距 (mm)"
+            type="number"
+            dense
+            outlined
+            data-testid="pa-prereq-pole-focal"
+          />
+          <div
+            style="margin-top: 6px; color: #90a4ae;"
+            data-testid="pa-prereq-selected-role"
+            :data-role="selectedPolarCameraRole"
+          >
+            当前选择设备: {{ polarRoleLabel(selectedPolarCameraRole) }}
+          </div>
+        </v-card-text>
+        <v-card-actions data-testid="pa-prereq-actions">
+          <v-spacer />
+          <v-btn text @click="cancelPrereqDialog" data-testid="pa-prereq-cancel">取消</v-btn>
+          <v-btn text color="primary" @click="confirmPrereqDialog" data-testid="pa-prereq-confirm">保存并启动</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+  </div>
+</template>
+
+
+<script>
+import swh from '@/assets/sw_helpers.js'
+import PoleMasterPolarAlignmentPanel from './PoleMasterPolarAlignmentPanel.vue'
+import {
+  addVector3,
+  alignmentScaleForDistance,
+  cartesianToHorizontal,
+  crossProduct3,
+  dotProduct3,
+  equatorialRelativeTrajectory,
+  horizontalToCartesian,
+  normalizeAngleDelta,
+  normalizeVector3,
+  projectOriginOntoLine,
+  scaleVector3,
+  subtractVector3,
+  vectorLength3,
+  unwrapAngleSequence,
+} from '@/domain/polar-alignment/polarAlignmentMath'
+
+// 常量定义
+const COLORS = {
+  PRIMARY: '#64b5f6',
+  SUCCESS: '#4caf50',
+  WARNING: '#ff9800',
+  ERROR: '#f44336',
+  INFO: '#2196f3',
+  WHITE: '#ffffff',
+  BACKGROUND: 'rgba(35, 35, 45, 0.95)',
+  SURFACE: 'rgba(60, 60, 70, 0.9)'
+}
+
+const CALIBRATION_PHASES = {
+  INITIAL: 'initial',
+  COLLECTING: 'collecting',
+  ADJUSTING: 'adjusting',
+  VERIFYING: 'verifying'
+}
+
+const PROGRESS_THRESHOLDS = {
+  INITIALIZATION: 15,
+  FIRST_CALIBRATION: 25,
+  SECOND_CALIBRATION: 50,
+  THIRD_CALIBRATION: 75,
+  CALIBRATION_LOOP: 95,
+  COMPLETION: 100
+}
+
+const DIMENSIONS = {
+  MINIMIZED: { width: 250, height: 80 },
+  COLLAPSED: { width: 300, height: 120 },
+  EXPANDED: { width: 960, height: 430 }
+}
+
+const LOG_LIMIT = 100
+const DISPLAY_LOG_LIMIT = 10
+
+export default {
+  name: 'AutomaticPolarAlignmentCalibration',
+  components: {
+    PoleMasterPolarAlignmentPanel
+  },
+
+  props: {
+    visible: {
+      type: Boolean,
+      default: false
+    },
+    autoStart: {
+      type: Boolean,
+      default: false
+    },
+    // 新增：传入调整数据的单位（'deg' | 'arcmin' | 'arcsec'）
+    adjustmentUnit: { type: String, default: 'arcmin' },
+
+    // 新增：用户站位视角（'north' | 'south'），用于左右映射
+    facingPole: { type: String, default: 'north' },
+
+    // 新增：动作死区（以角分定义，UI判定是否需要动作）
+    deadbandArcmin: { type: Number, default: 0.5 }
+  },
+
+  data() {
+    return {
+      // 连接状态
+      isConnected: false,
+
+      // 位置信息
+      currentPosition: {
+        ra: '00h 00m 00s',
+        dec: '+00° 00\' 00"'
+      },
+      targetPosition: {
+        ra: '00h 00m 00s',
+        dec: '+00° 00\' 00"'
+      },
+      previousPosition: {
+        ra: '00h 00m 00s',
+        dec: '+00° 00\' 00"'
+      },
+
+      // 校准数据
+      isCalibrationComplete: false,
+      isPolarAligned: false,
+
+      // 调整信息
+      adjustment: {
+        azimuth: 0.0,
+        altitude: 0.0
+      },
+
+      // 日志系统 - 使用循环数组优化内存
+      logs: [],
+      logIndex: 0,
+      logCapacity: LOG_LIMIT,
+
+      // 校准运行状态
+      isCalibrationRunning: false,
+
+      // 视场数据
+      fieldData: null,
+
+      // 当前进度
+      currentProgress: 0,
+
+      // === 新增：界面控制状态 ===
+      // 拖动状态
+      isDragging: false,
+      dragOffset: { x: 0, y: 0 },
+
+      // 控件位置
+      position: { x: 50, y: 50 },
+
+      // 界面状态
+      isMinimized: false,
+      isCollapsed: false,
+      uiScale: 1,
+      widthScale: 1,
+      heightScale: 1,
+
+      // === 新增：性能优化 ===
+      // 缓存尺寸计算结果
+      cachedDimensions: {
+        width: 350,
+        height: 400
+      },
+      // 拖动状态标记
+      isDraggingState: false,
+
+      // 内存清理定时器
+      memoryCleanupTimer: null,
+
+      // 计算缓存
+      cachedAzimuthArcmin: null,
+      cachedAltitudeArcmin: null,
+      lastAzimuthValue: null,
+      lastAltitudeValue: null,
+
+      // 拖动性能优化
+      lastDragTime: 0,
+
+      // 极轴偏移量
+      polarAxisOffset: {
+        azimuth: 0,
+        altitude: 0
+      },
+
+      // 校准循环计数
+      calibrationLoopCount: 0,
+      lastCalibrationProgress: 0,
+
+      // 校准阶段状态
+      calibrationPhase: 'initial', // 'initial', 'collecting', 'adjusting', 'verifying'
+      calibrationPoints: [], // 存储三个校准点的坐标
+      maxCalibrationPoints: 3, // 最大校准点数量
+      targetPoint: null, // 存储目标点坐标
+
+      // 移除假极轴相关数据
+      // fakePolarAxis: {
+      //   ra: null,
+      //   dec: null,
+      //   calculated: false
+      // },
+
+      // === 指导调整阶段进度 ===
+      guidanceStep: null, // 当前步骤: 0=拍摄, 1=检查星点, 2=解析, 3=计算, 4=发送指导, 5=等待用户, 6=完成
+      guidanceStepMessage: '', // 当前步骤消息
+      guidanceStarCount: -1, // 识别的星点数量
+      guidanceStepStatus: 'normal', // 步骤状态: 'normal', 'success', 'error'
+      guidanceStatusTimeout: null, // 状态动画定时器
+      guidanceSolveStats: {
+        success: 0,
+        total: 0
+      },
+
+      // === 轨迹画布状态 ===
+      showTrajectoryOverlay: false,
+      overlayMode: 'fullscreen', // 'fullscreen' | 'windowed'
+      trajectoryScale: 1, // 已弃用（不再使用手动缩放）
+      autoFitPxPerDeg: 40, // 自动适配计算出的 px/deg（基于当前画布尺寸与数据范围）
+      trajectoryPoints: [], // [{x, y}] in overlay canvas space after transform
+      rawTrajectoryPoints: [], // 保存原始的 {ra, dec} 序列
+      lastRawPosition: null, // {ra, dec} numeric
+      targetRawPosition: null, // {ra, dec} numeric, fixed as overlay center reference
+      windowedRect: { x: 40, y: 80, width: 420, height: 300 },
+      // 逻辑画布尺寸：用于窗口模式将“全屏画布”按比例缩放进窗口
+      baseCanvasLogicalSize: { width: 1280, height: 720 },
+      windowDrag: { active: false, offsetX: 0, offsetY: 0 },
+      // === 视图变换（仅缩小比例；以目标与首点填满画布） ===
+      currentPxPerDeg: null, // 当前像素/度，只会缩小
+      viewMinWorldX: null, // 世界坐标：X 为 dRA(unwrapped)，Y 为 dDec
+      viewMaxWorldX: null,
+      viewMinWorldY: null,
+      viewMaxWorldY: null,
+      raUnwrapAnchor: null, // dRA 展开锚点（首点相对目标）
+      viewPadRatioX: 0.12,
+      viewPadRatioY: 0.10,
+      viewOffsetXPx: 0,
+      viewOffsetYPx: 0,
+      // 轨迹点合并容差（角分）
+      trajectoryMergeTolArcmin: 2.0,  // 基础合并容差（角分）
+      trajectoryMergeTolPx: 6,        // 希望相邻轨迹点在屏幕上的最小像素间距（动态换算成角度）
+      calibrationCircleArcmin: 1.0,  // 校准圆半径（角分）-- 约等于校准精度
+
+      // === 目标点多级精度圈（度 / 角分 / 角秒） ===
+      // 使用与你期望一致的 5 个“级别区间”来控制目标圈的内外半径：
+      // 1) 10°  -> 1°    : 外圈 10°，内圈 1°
+      // 2) 60'  -> 10'   : 外圈 60'，内圈 10'
+      // 3) 10'  -> 1'    : 外圈 10'，内圈 1'
+      // 4) 60\" -> 10\"  : 外圈 60\"，内圈 10\"
+      // 5) 10\" -> 1\"   : 外圈 10\"，内圈 1\"；进入 1\" 内时为绿色，否则为黄色
+      // alignmentScaleStage 记录当前所处的细分级别：
+      // 'deg_10_1' | 'arcmin_60_10' | 'arcmin_10_1' | 'arcsec_60_10' | 'arcsec_10_1'
+      alignmentScaleStage: 'deg_10_1',
+      outerRingDeg: 10,                  // 目标外圈半径（单位：度）
+      innerRingDeg: 1,                   // 目标内圈半径（单位：度，为 0 或 null 表示不绘制，逻辑用）
+      targetRingColor: '#FFD54F',        // 目标圈颜色：默认黄色，进入角秒级且 <1\" 时为绿色
+      alignmentCurrentDistanceDeg: null, // 当前与目标的角距离（度）
+
+      selectedPolarCameraRole: 'MainCamera',
+      activePolarCameraRole: 'MainCamera',
+      isPoleMasterCalibrationActive: false,
+      isPoleMasterSimulationRunning: false,
+      isPoleMasterPanelVisible: false,
+      poleMasterState: 0,
+      poleMasterMessage: '',
+      poleMasterProgress: 0,
+      poleMasterCurrentFrameId: '',
+      poleMasterPendingGuideByFrameId: Object.create(null),
+      poleMasterPendingOverlayByFrameId: Object.create(null),
+      poleMasterGuide: {
+        imageW: 0,
+        imageH: 0,
+        axisX: null,
+        axisY: null,
+        poleX: null,
+        poleY: null,
+        errorPx: null,
+        errorArcsec: null,
+        hint: ''
+      },
+      poleMasterFrame: null,
+      poleMasterOverlay: null,
+      showCameraSelectDialog: false,
+      cameraSelectCountdown: 60,
+      cameraSelectTimer: null,
+      cameraSelectResolver: null,
+      cameraSelectAvailableRoles: ['MainCamera', 'Guider'],
+      cameraSelectDefaultRole: 'MainCamera',
+      showPrereqDialog: false,
+      prereqDialogResolver: null,
+      configCoordinatesRaw: '',
+      configMainFocalLengthRaw: '',
+      configGuiderFocalLengthRaw: '',
+      configPoleFocalLengthRaw: '',
+      prereqForm: {
+        latitude: '',
+        longitude: '',
+        mainFocalLength: '',
+        guiderFocalLength: '',
+        poleFocalLength: ''
+      },
+
+      // 观测者位置重试状态
+      locationRetryInProgress: false,
+
+      hasAcceptUpdateMessage: false, // 是否已经接受更新消息,防止由于组件加载顺序导致组件更新丢失
+    }
+  },
+
+  computed: {
+    // 显示的日志 - 使用缓存优化
+    displayLogs() {
+      // 返回最近的10条日志，按时间倒序（用于显示最新一条）
+      const logs = this.logs
+      if (logs.length <= DISPLAY_LOG_LIMIT) {
+        return logs.slice().reverse()
+      }
+      return logs.slice(-DISPLAY_LOG_LIMIT).reverse()
+    },
+
+    // 校准进度百分比
+    progressPercentage() {
+      // 使用从后端传入的进度
+      return this.currentProgress
+    },
+
+    // 是否可以自动校准
+    canAutoCalibrate() {
+      return this.isConnected
+    },
+
+    showPoleMasterPanel() {
+      return this.isPoleMasterPanelVisible && this.isPoleMasterViewActive
+    },
+
+    isPoleMasterViewActive() {
+      return this.selectedPolarCameraRole === 'PoleCamera' ||
+        this.activePolarCameraRole === 'PoleCamera' ||
+        this.isPoleMasterCalibrationActive
+    },
+
+    formattedPoleMasterErrorArcsec() {
+      const v = Number(this.poleMasterGuide?.errorArcsec)
+      return Number.isFinite(v) ? `${v.toFixed(1)}"` : '--'
+    },
+
+    poleMasterErrorArcsecNeedsAdjustment() {
+      const v = Number(this.poleMasterGuide?.errorArcsec)
+      return Number.isFinite(v) && v > 30
+    },
+
+    // 是否需要方位角调整 - 使用缓存避免重复计算
+    needsAzimuthAdjustment() {
+      const v = this.adjustment?.azimuth
+      if (!Number.isFinite(v)) return false
+      // 使用缓存的值，避免重复计算
+      return this.cachedAzimuthArcmin !== null ? 
+        Math.abs(this.cachedAzimuthArcmin) > this.deadbandArcmin : 
+        Math.abs(this.unitToArcmin(v, this.adjustmentUnit)) > this.deadbandArcmin
+    },
+
+    // 是否需要高度角调整 - 使用缓存避免重复计算
+    needsAltitudeAdjustment() {
+      const v = this.adjustment?.altitude
+      if (!Number.isFinite(v)) return false
+      // 使用缓存的值，避免重复计算
+      return this.cachedAltitudeArcmin !== null ? 
+        Math.abs(this.cachedAltitudeArcmin) > this.deadbandArcmin : 
+        Math.abs(this.unitToArcmin(v, this.adjustmentUnit)) > this.deadbandArcmin
+    }
+  },
+
+  watch: {
+  visible(newVal) {
+      if (newVal) {
+        this.updateUiScale()
+        this.$nextTick(this.constrainPanelToViewport)
+      }
+      if (newVal && this.autoStart) {
+        this.startAutoCalibration()
+      }
+    },
+    
+    // 监听当前坐标变化，自动更新朝向极点
+    '$store.state.currentLocation.lat': {
+      handler(newLat, oldLat) {
+        if (newLat !== oldLat && newLat !== undefined) {
+          const facingPole = this.calculateFacingPole()
+          this.addLog(this.$t('Location Changed', [facingPole, newLat]), 'info')
+          
+          // 如果正在调整阶段，重新计算调整建议
+          if (this.calibrationPhase === 'adjusting') {
+            this.addLog(this.$t('Recalculating Adjustment Directions'), 'info')
+          }
+        }
+      },
+      immediate: false
+    },
+
+    // 监听调整值变化，更新缓存 - 使用防抖避免频繁更新
+    'adjustment.azimuth': {
+      handler: function(newVal) {
+        if (Number.isFinite(newVal)) {
+          // 清除之前的定时器
+          if (this._azimuthUpdateTimer) {
+            clearTimeout(this._azimuthUpdateTimer)
+          }
+          // 使用防抖，延迟100ms更新
+          this._azimuthUpdateTimer = setTimeout(() => {
+            this.cachedAzimuthArcmin = this.unitToArcmin(newVal, this.adjustmentUnit)
+            this.lastAzimuthValue = newVal
+          }, 100)
+        }
+      },
+      immediate: true
+    },
+
+    'adjustment.altitude': {
+      handler: function(newVal) {
+        if (Number.isFinite(newVal)) {
+          // 清除之前的定时器
+          if (this._altitudeUpdateTimer) {
+            clearTimeout(this._altitudeUpdateTimer)
+          }
+          // 使用防抖，延迟100ms更新
+          this._altitudeUpdateTimer = setTimeout(() => {
+            this.cachedAltitudeArcmin = this.unitToArcmin(newVal, this.adjustmentUnit)
+            this.lastAltitudeValue = newVal
+          }, 100)
+        }
+      },
+      immediate: true
+    }
+  },
+
+    mounted() {
+      // 实现组件初始化逻辑
+      this.initialize()
+
+      // 初始化缓存的尺寸信息
+      this.updateCachedDimensions()
+      this.updateUiScale()
+
+      // 监听信号总线事件
+      this.$bus.$on('showPolarAlignment', this.showInterface)
+      this.$bus.$on('hidePolarAlignment', this.hideInterface)
+
+      // 监听赤道仪连接状态
+      this.$bus.$on('MountConnected', this.updateMountConnection)
+
+      // 接收状态更新
+      this.$bus.$on('PolarAlignmentState', this.updatePolarAlignmentState)
+
+      // 监听视场数据更新
+      this.$bus.$on('FieldDataUpdate', this.updateFieldData)
+
+      // 监听卡片信息更新
+      this.$bus.$on('updateCardInfo', this.updateCardInfo)
+
+      // 监听自动校准状态
+      this.$bus.$on('PolarAlignmentIsRunning', this.updatePolarAlignmentIsRunning)
+
+      this.$bus.$on('Coordinates', this.onCoordinatesConfig)
+      this.$bus.$on('MainCameraFocalLength', this.onMainCameraFocalLengthConfig)
+      this.$bus.$on('FocalLength', this.onLegacyMainCameraFocalLengthConfig)
+      this.$bus.$on('GuiderFocalLength', this.onGuiderFocalLengthConfig)
+      this.$bus.$on('PoleCameraFocalLength', this.onPoleCameraFocalLengthConfig)
+
+      // 监听指导调整阶段进度
+      this.$bus.$on('PolarAlignmentGuidanceStepProgress', this.updateGuidanceStepProgress)
+      this.$bus.$on('PolarAlignmentGuidanceSolveStats', this.updateGuidanceSolveStats)
+      this.$bus.$on('PoleMasterAlignmentState', this.updatePoleMasterAlignmentState)
+      this.$bus.$on('PoleMasterAlignmentGuideData', this.updatePoleMasterGuideData)
+      this.$bus.$on('PoleMasterAlignmentFrameData', this.updatePoleMasterFrameData)
+      this.$bus.$on('PoleMasterAlignmentOverlayData', this.updatePoleMasterOverlayData)
+      this.$bus.$on('togglePoleMasterAlignmentPanel', this.togglePoleMasterPanelFromControl)
+
+      // 组件加载完成后，若尚未收到更新消息，则主动请求极轴对齐状态
+      if (!this.hasAcceptUpdateMessage) {
+        this.$bus.$emit('AppSendMessage', 'Vue_Command', 'getPolarAlignmentState')
+      }
+
+      // 启动定期内存清理（每5分钟清理一次）
+      this.startMemoryCleanup()
+
+      window.addEventListener('resize', this.handleViewportResize)
+      window.visualViewport?.addEventListener?.('resize', this.handleViewportResize)
+    },
+
+    beforeDestroy() {
+      // 移除信号总线监听
+      this.$bus.$off('showPolarAlignment', this.showInterface)
+      this.$bus.$off('hidePolarAlignment', this.hideInterface)
+      this.$bus.$off('MountConnected', this.updateMountConnection)
+      this.$bus.$off('PolarAlignmentState', this.updatePolarAlignmentState)
+      this.$bus.$off('FieldDataUpdate', this.updateFieldData)
+      this.$bus.$off('updateCardInfo', this.updateCardInfo)
+      this.$bus.$off('PolarAlignmentIsRunning', this.updatePolarAlignmentIsRunning)
+      this.$bus.$off('Coordinates', this.onCoordinatesConfig)
+      this.$bus.$off('MainCameraFocalLength', this.onMainCameraFocalLengthConfig)
+      this.$bus.$off('FocalLength', this.onLegacyMainCameraFocalLengthConfig)
+      this.$bus.$off('GuiderFocalLength', this.onGuiderFocalLengthConfig)
+      this.$bus.$off('PoleCameraFocalLength', this.onPoleCameraFocalLengthConfig)
+      this.$bus.$off('PolarAlignmentGuidanceStepProgress', this.updateGuidanceStepProgress)
+      this.$bus.$off('PolarAlignmentGuidanceSolveStats', this.updateGuidanceSolveStats)
+      this.$bus.$off('PoleMasterAlignmentState', this.updatePoleMasterAlignmentState)
+      this.$bus.$off('PoleMasterAlignmentGuideData', this.updatePoleMasterGuideData)
+      this.$bus.$off('PoleMasterAlignmentFrameData', this.updatePoleMasterFrameData)
+      this.$bus.$off('PoleMasterAlignmentOverlayData', this.updatePoleMasterOverlayData)
+      this.$bus.$off('togglePoleMasterAlignmentPanel', this.togglePoleMasterPanelFromControl)
+
+      // 清理拖动事件监听
+      this.cleanupDragListeners()
+      window.removeEventListener('resize', this.handleViewportResize)
+      window.visualViewport?.removeEventListener?.('resize', this.handleViewportResize)
+
+      // 清理缓存数据
+      this.clearCachedData()
+
+      // 停止内存清理定时器
+      this.stopMemoryCleanup()
+      this.clearCameraSelectTimer()
+      if (this.cameraSelectResolver) {
+        this.cameraSelectResolver(this.cameraSelectDefaultRole || 'MainCamera')
+        this.cameraSelectResolver = null
+      }
+      if (this.prereqDialogResolver) {
+        this.prereqDialogResolver(false)
+        this.prereqDialogResolver = null
+      }
+
+      // 清理防抖定时器
+      this.clearDebounceTimers()
+
+      // 清理状态动画定时器
+      if (this.guidanceStatusTimeout) {
+        clearTimeout(this.guidanceStatusTimeout)
+        this.guidanceStatusTimeout = null
+      }
+
+      // 实现组件销毁逻辑
+      this.cleanup()
+    },
+
+    methods: {
+      // ========================================
+      // 信号总线事件处理
+      // ========================================
+      showInterface() {
+        this.$emit('update:visible', true)
+        this.$bus.$emit('PoleMasterPanelVisible', this.showPoleMasterPanel)
+      },
+
+      hideInterface() {
+        this.$emit('update:visible', false)
+        this.isPoleMasterPanelVisible = false
+        this.$bus.$emit('PoleMasterPanelVisible', false)
+      },
+
+      updateMountConnection(status) {
+        this.isConnected = status === 1
+        const statusText = this.isConnected ? this.$t('Connected') : this.$t('Disconnected')
+        this.addLog(this.$t('Mount Connection Status', [statusText]), this.isConnected ? 'success' : 'warning')
+      },
+
+      updatePoleMasterAlignmentState(isRunning, state, message, progress) {
+        const stateNumber = Number(state)
+        const progressNumber = Number(progress)
+        this.activePolarCameraRole = 'PoleCamera'
+        this.selectedPolarCameraRole = 'PoleCamera'
+        this.poleMasterState = Number.isFinite(stateNumber) ? stateNumber : 0
+        const translatedMessage = this.translatePolarAlignmentMessage(message || '')
+        this.poleMasterMessage = translatedMessage
+        this.poleMasterProgress = Number.isFinite(progressNumber) ? progressNumber : 0
+        this.isPoleMasterCalibrationActive = !!isRunning
+        this.isCalibrationRunning = !!isRunning
+        this.hasAcceptUpdateMessage = true
+
+        if (translatedMessage) {
+          const level = this.poleMasterState === 10 ? 'error' : (this.poleMasterState === 9 ? 'success' : 'info')
+          this.addLog(translatedMessage, level)
+        }
+
+        const featureDevices = this.polarFeatureDevices('PoleCamera')
+        if (isRunning) {
+          this.$startFeature(featureDevices, 'AutoPolarAlignment')
+        } else {
+          this.$stopFeature(featureDevices, 'AutoPolarAlignment')
+          this.isPoleMasterCalibrationActive = false
+          this.isPoleMasterSimulationRunning = false
+        }
+      },
+
+      translatePolarAlignmentMessage(message) {
+        if (!message || typeof message !== 'string') return ''
+        const qualityPrefix = '环境质量较差，极轴镜星场解析失败'
+        if (message.startsWith(qualityPrefix)) {
+          const detail = message.slice(qualityPrefix.length)
+          return `${this.$t('PoleMasterPoorSkyQuality')}${detail}`
+        }
+        return this.$t(message)
+      },
+
+      updatePoleMasterGuideData(data) {
+        if (!data || typeof data !== 'object') return
+        const frameId = this.normalizePoleMasterFrameId(data.frameId)
+        if (!frameId) return
+        const currentFrameId = this.normalizePoleMasterFrameId(this.poleMasterCurrentFrameId)
+        console.log('[PoleMasterDebug][GuideIn]', {
+          frameId,
+          currentFrameId,
+          errorArcsec: data.errorArcsec,
+          errorPx: data.errorPx,
+          hint: data.hint
+        })
+        if (currentFrameId && frameId === currentFrameId) {
+          this.poleMasterGuide = { ...this.poleMasterGuide, ...data }
+          console.log('[PoleMasterDebug][GuideApplyNow]', {
+            frameId,
+            currentFrameId
+          })
+        } else {
+          this.poleMasterPendingGuideByFrameId[frameId] = { ...data }
+          console.warn('[PoleMasterDebug][GuidePending]', {
+            frameId,
+            currentFrameId,
+            pendingGuideKeys: Object.keys(this.poleMasterPendingGuideByFrameId || {})
+          })
+        }
+      },
+
+      updatePoleMasterFrameData(data) {
+        if (!data || typeof data !== 'object') return
+        const fileName = data.fileName || data.url || ''
+        if (!fileName) return
+        const frameId = this.normalizePoleMasterFrameId(data.frameId)
+        if (!frameId) return
+        console.log('[PoleMasterDebug][FrameIn]', {
+          fileName,
+          frameId,
+          imageWidth: data.imageWidth,
+          imageHeight: data.imageHeight
+        })
+        this.poleMasterCurrentFrameId = frameId
+        // Keep last overlay until a new overlay for current frame arrives.
+        // Some backends currently reuse a coarse frameId (e.g. "polecamera"),
+        // clearing here causes diagnostics to flicker as "--/0/0" between messages.
+        this.poleMasterFrame = {
+          ...data,
+          frameId,
+          sessionId: data.sessionId || `${fileName}:${frameId || Date.now()}`
+        }
+        this.applyPendingPoleMasterPayloadForCurrentFrame()
+        this.addPoleMasterFrameLog(`收到极轴镜预览帧: ${fileName} (${data.imageWidth || '--'}x${data.imageHeight || '--'})`, 'info')
+      },
+
+      updatePoleMasterOverlayData(data) {
+        if (!data || typeof data !== 'object') return
+        const overlayFrameId = this.normalizePoleMasterFrameId(data.frameId)
+        if (!overlayFrameId) return
+        const currentFrameId = this.normalizePoleMasterFrameId(this.poleMasterCurrentFrameId)
+        console.log('[PoleMasterDebug][OverlayIn]', {
+          overlayFrameId,
+          currentFrameId,
+          phase: data.phase,
+          quality: data.quality
+        })
+        if (currentFrameId && overlayFrameId === currentFrameId) {
+          this.poleMasterOverlay = data
+          console.log('[PoleMasterDebug][OverlayApplyNow]', {
+            overlayFrameId,
+            currentFrameId
+          })
+        } else {
+          this.poleMasterPendingOverlayByFrameId[overlayFrameId] = { ...data }
+          console.warn('[PoleMasterDebug][OverlayPending]', {
+            overlayFrameId,
+            currentFrameId,
+            pendingOverlayKeys: Object.keys(this.poleMasterPendingOverlayByFrameId || {})
+          })
+        }
+      },
+      normalizePoleMasterFrameId(frameId) {
+        if (frameId == null) return ''
+        return String(frameId).trim()
+      },
+      applyPendingPoleMasterPayloadForCurrentFrame() {
+        const currentFrameId = this.normalizePoleMasterFrameId(this.poleMasterCurrentFrameId)
+        if (!currentFrameId) return
+        const pendingGuide = this.poleMasterPendingGuideByFrameId[currentFrameId]
+        if (pendingGuide) {
+          this.poleMasterGuide = { ...this.poleMasterGuide, ...pendingGuide }
+          delete this.poleMasterPendingGuideByFrameId[currentFrameId]
+          console.log('[PoleMasterDebug][GuidePendingApplied]', {
+            currentFrameId
+          })
+        }
+        const pendingOverlay = this.poleMasterPendingOverlayByFrameId[currentFrameId]
+        if (pendingOverlay) {
+          this.poleMasterOverlay = pendingOverlay
+          delete this.poleMasterPendingOverlayByFrameId[currentFrameId]
+          console.log('[PoleMasterDebug][OverlayPendingApplied]', {
+            currentFrameId,
+            phase: pendingOverlay.phase
+          })
+        }
+        console.log('[PoleMasterDebug][ApplyPendingDone]', {
+          currentFrameId,
+          hasGuide: !!this.poleMasterGuide,
+          hasOverlay: !!this.poleMasterOverlay,
+          leftGuidePendingKeys: Object.keys(this.poleMasterPendingGuideByFrameId || {}),
+          leftOverlayPendingKeys: Object.keys(this.poleMasterPendingOverlayByFrameId || {})
+        })
+      },
+      resetPoleMasterPendingPayload() {
+        this.poleMasterPendingGuideByFrameId = Object.create(null)
+        this.poleMasterPendingOverlayByFrameId = Object.create(null)
+      },
+
+      addPoleMasterFrameLog(message, level = 'info') {
+        const text = `[PoleMasterImage] ${message}`
+        if (level === 'error') {
+          console.error(text)
+        } else if (level === 'warning') {
+          console.warn(text)
+        } else {
+          console.log(text)
+        }
+        this.addLog(text, level)
+      },
+
+      onCoordinatesConfig(value) {
+        this.configCoordinatesRaw = String(value || '').trim()
+        const parts = this.configCoordinatesRaw.split(',').map(v => v.trim())
+        if (parts.length >= 2) {
+          this.prereqForm.latitude = parts[0]
+          this.prereqForm.longitude = parts[1]
+        }
+      },
+
+      onMainCameraFocalLengthConfig(value) {
+        this.configMainFocalLengthRaw = String(value || '').trim()
+        this.prereqForm.mainFocalLength = this.configMainFocalLengthRaw
+      },
+
+      onLegacyMainCameraFocalLengthConfig(value) {
+        if (this.configMainFocalLengthRaw) return
+        const v = String(value || '').trim()
+        this.configMainFocalLengthRaw = v
+        this.prereqForm.mainFocalLength = v
+      },
+
+      onGuiderFocalLengthConfig(value) {
+        this.configGuiderFocalLengthRaw = String(value || '').trim()
+        this.prereqForm.guiderFocalLength = this.configGuiderFocalLengthRaw
+      },
+
+      onPoleCameraFocalLengthConfig(value) {
+        this.configPoleFocalLengthRaw = String(value || '').trim()
+        this.prereqForm.poleFocalLength = this.configPoleFocalLengthRaw
+      },
+
+      clearCameraSelectTimer() {
+        if (this.cameraSelectTimer) {
+          clearInterval(this.cameraSelectTimer)
+          this.cameraSelectTimer = null
+        }
+      },
+
+      hasConnectedDevice(deviceName) {
+        const getter = this.$store?.getters?.['device/getDevice']
+        if (typeof getter !== 'function') return false
+        const d = getter(deviceName)
+        return !!(d && d.connected)
+      },
+
+      polarRoleLabel(role) {
+        if (role === 'PoleCamera') return '电子极轴镜'
+        if (role === 'Guider') return '导星镜'
+        return '主相机'
+      },
+
+      polarRoleDevice(role) {
+        if (role === 'PoleCamera') return 'PoleCamera'
+        if (role === 'Guider') return 'GuiderCamera'
+        return 'MainCamera'
+      },
+
+      polarFeatureDevices(role) {
+        return [this.polarRoleDevice(role), 'Mount']
+      },
+
+      getConnectedPolarRoles() {
+        const roles = []
+        if (this.hasConnectedDevice('PoleCamera')) roles.push('PoleCamera')
+        if (this.hasConnectedDevice('MainCamera')) roles.push('MainCamera')
+        if (this.hasConnectedDevice('GuiderCamera')) roles.push('Guider')
+        return roles
+      },
+
+      getCurrentCoordinates() {
+        const storeLoc = this.$store?.state?.currentLocation || {}
+        const lat = Number(storeLoc.lat)
+        const lon = Number(storeLoc.lng)
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          return { lat: String(lat), lon: String(lon) }
+        }
+        const raw = String(this.configCoordinatesRaw || '').trim()
+        const parts = raw.split(',').map(v => v.trim())
+        return { lat: parts[0] || '', lon: parts[1] || '' }
+      },
+
+      syncPrereqFormFromCurrentValues() {
+        const { lat, lon } = this.getCurrentCoordinates()
+        this.prereqForm.latitude = lat
+        this.prereqForm.longitude = lon
+        this.prereqForm.mainFocalLength = String(this.configMainFocalLengthRaw || '').trim()
+        this.prereqForm.guiderFocalLength = String(this.configGuiderFocalLengthRaw || '').trim()
+        this.prereqForm.poleFocalLength = String(this.configPoleFocalLengthRaw || '').trim()
+      },
+
+      validateCoordinates(latValue, lonValue) {
+        const lat = Number(latValue)
+        const lon = Number(lonValue)
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false
+        if (lat < -90 || lat > 90) return false
+        if (lon < -180 || lon > 180) return false
+        return true
+      },
+
+      validateRoleFocalLength(role, mainFocal, guiderFocal, poleFocal) {
+        const main = Number(mainFocal)
+        const guider = Number(guiderFocal)
+        const pole = Number(poleFocal)
+        if (role === 'PoleCamera') return Number.isFinite(pole) && pole > 0
+        if (role === 'Guider') return Number.isFinite(guider) && guider > 0
+        return Number.isFinite(main) && main > 0
+      },
+
+      requestCameraRoleSelection(availableRoles = ['MainCamera', 'Guider'], defaultRole = 'MainCamera') {
+        return new Promise((resolve) => {
+          this.cameraSelectResolver = resolve
+          this.cameraSelectAvailableRoles = Array.isArray(availableRoles) && availableRoles.length ? availableRoles : ['MainCamera']
+          this.cameraSelectDefaultRole = this.cameraSelectAvailableRoles.includes(defaultRole) ? defaultRole : this.cameraSelectAvailableRoles[0]
+          this.cameraSelectCountdown = 60
+          this.showCameraSelectDialog = true
+          this.clearCameraSelectTimer()
+          this.cameraSelectTimer = setInterval(() => {
+            this.cameraSelectCountdown -= 1
+            if (this.cameraSelectCountdown <= 0) {
+              this.selectPolarCameraRole(this.cameraSelectDefaultRole)
+            }
+          }, 1000)
+        })
+      },
+
+      selectPolarCameraRole(role) {
+        this.showCameraSelectDialog = false
+        this.clearCameraSelectTimer()
+        const resolver = this.cameraSelectResolver
+        this.cameraSelectResolver = null
+        const normalizedRole = role === 'PoleCamera' || role === 'Guider' ? role : 'MainCamera'
+        if (resolver) resolver(this.cameraSelectAvailableRoles.includes(normalizedRole) ? normalizedRole : this.cameraSelectDefaultRole)
+      },
+
+      openPrereqDialog(role) {
+        this.selectedPolarCameraRole = role
+        this.syncPrereqFormFromCurrentValues()
+        this.showPrereqDialog = true
+        return new Promise((resolve) => {
+          this.prereqDialogResolver = resolve
+        })
+      },
+
+      cancelPrereqDialog() {
+        this.showPrereqDialog = false
+        const resolver = this.prereqDialogResolver
+        this.prereqDialogResolver = null
+        if (resolver) resolver(false)
+      },
+
+      confirmPrereqDialog() {
+        const lat = String(this.prereqForm.latitude || '').trim()
+        const lon = String(this.prereqForm.longitude || '').trim()
+        const mainFocal = String(this.prereqForm.mainFocalLength || '').trim()
+        const guiderFocal = String(this.prereqForm.guiderFocalLength || '').trim()
+        const poleFocal = String(this.prereqForm.poleFocalLength || '').trim()
+        const mainFocalNum = Number(mainFocal)
+        const guiderFocalNum = Number(guiderFocal)
+        const poleFocalNum = Number(poleFocal)
+
+        if (!this.validateCoordinates(lat, lon)) {
+          this.callShowMessageBox('经纬度无效，请检查输入范围', 'warning')
+          return
+        }
+        if (!this.validateRoleFocalLength(this.selectedPolarCameraRole, mainFocal, guiderFocal, poleFocal)) {
+          this.callShowMessageBox('所选设备焦距必须大于 0', 'warning')
+          return
+        }
+
+        const isAutoLocation = this.$store?.state?.useAutoLocation ? 'true' : 'false'
+        this.$bus.$emit('AppSendMessage', 'Vue_Command', `saveToConfigFile:Coordinates:${lat},${lon},${isAutoLocation}`)
+
+        if (Number.isFinite(mainFocalNum) && mainFocalNum > 0) {
+          this.$bus.$emit('AppSendMessage', 'Vue_Command', `saveToConfigFile:MainCameraFocalLength:${mainFocalNum}`)
+          this.$bus.$emit('AppSendMessage', 'Vue_Command', `saveToConfigFile:FocalLength:${mainFocalNum}`)
+        }
+        if (Number.isFinite(guiderFocalNum) && guiderFocalNum > 0) {
+          this.$bus.$emit('AppSendMessage', 'Vue_Command', `saveToConfigFile:GuiderFocalLength:${guiderFocalNum}`)
+        }
+        if (Number.isFinite(poleFocalNum) && poleFocalNum > 0) {
+          this.$bus.$emit('AppSendMessage', 'Vue_Command', `saveToConfigFile:PoleCameraFocalLength:${poleFocalNum}`)
+        }
+
+        this.configCoordinatesRaw = `${lat},${lon},${isAutoLocation}`
+        if (Number.isFinite(mainFocalNum) && mainFocalNum > 0) this.configMainFocalLengthRaw = String(mainFocalNum)
+        if (Number.isFinite(guiderFocalNum) && guiderFocalNum > 0) this.configGuiderFocalLengthRaw = String(guiderFocalNum)
+        if (Number.isFinite(poleFocalNum) && poleFocalNum > 0) this.configPoleFocalLengthRaw = String(poleFocalNum)
+
+        this.showPrereqDialog = false
+        const resolver = this.prereqDialogResolver
+        this.prereqDialogResolver = null
+        if (resolver) resolver(true)
+      },
+
+      callShowMessageBox(message, type = 'info') {
+        this.$bus.$emit('showMsgBox', message, type)
+      },
+
+      // ========================================
+      // 初始化和清理
+      // ========================================
+      initialize() {
+        this.addLog(this.$t('Polar Alignment Component Initialized'), 'info')
+        
+        // 记录当前朝向极点
+        const facingPole = this.calculateFacingPole()
+        const lat = this.$store?.state?.currentLocation?.lat || 'unknown'
+        this.addLog(this.$t('Facing Pole', [facingPole, lat]), 'info')
+      },
+
+      cleanup() {
+        this.addLog(this.$t('Polar Alignment Component Cleaned'), 'info')
+      },
+
+      // 内存使用监控（仅在开发环境）
+      getMemoryUsage() {
+        if (process.env.NODE_ENV === 'development' && performance.memory) {
+          return {
+            usedJSHeapSize: Math.round(performance.memory.usedJSHeapSize / 1024 / 1024) + 'MB',
+            totalJSHeapSize: Math.round(performance.memory.totalJSHeapSize / 1024 / 1024) + 'MB',
+            jsHeapSizeLimit: Math.round(performance.memory.jsHeapSizeLimit / 1024 / 1024) + 'MB',
+            logsCount: this.logs.length,
+            calibrationPointsCount: this.calibrationPoints.length
+          }
+        }
+        return null
+      },
+
+      // 启动定期内存清理
+      startMemoryCleanup() {
+        this.memoryCleanupTimer = setInterval(() => {
+          this.performMemoryCleanup()
+        }, 5 * 60 * 1000) // 每5分钟清理一次
+      },
+
+      // 停止内存清理定时器
+      stopMemoryCleanup() {
+        if (this.memoryCleanupTimer) {
+          clearInterval(this.memoryCleanupTimer)
+          this.memoryCleanupTimer = null
+        }
+      },
+
+      // 执行内存清理
+      performMemoryCleanup() {
+        // 清理过期的日志（保留最近50条）
+        if (this.logs.length > 50) {
+          this.logs = this.logs.slice(-50)
+          this.logIndex = Math.min(this.logIndex, 50)
+        }
+
+        // 清理过期的校准点（如果超过最大数量）
+        if (this.calibrationPoints.length > this.maxCalibrationPoints) {
+          this.calibrationPoints = this.calibrationPoints.slice(-this.maxCalibrationPoints)
+        }
+
+        // 强制垃圾回收（如果可用）
+        if (window.gc && typeof window.gc === 'function') {
+          window.gc()
+        }
+
+        // 在开发环境输出内存使用情况
+        if (process.env.NODE_ENV === 'development') {
+          const memoryInfo = this.getMemoryUsage()
+          if (memoryInfo) {
+            console.log('Memory cleanup performed:', memoryInfo)
+          }
+        }
+      },
+
+      // 清理拖动事件监听器
+      cleanupDragListeners() {
+        document.removeEventListener('mousemove', this.onDrag)
+        document.removeEventListener('mouseup', this.stopDrag)
+        document.removeEventListener('touchmove', this.onDrag)
+        document.removeEventListener('touchend', this.stopDrag)
+      },
+
+      // 清理防抖定时器
+      clearDebounceTimers() {
+        if (this._azimuthUpdateTimer) {
+          clearTimeout(this._azimuthUpdateTimer)
+          this._azimuthUpdateTimer = null
+        }
+        if (this._altitudeUpdateTimer) {
+          clearTimeout(this._altitudeUpdateTimer)
+          this._altitudeUpdateTimer = null
+        }
+      },
+
+      // 清理缓存数据
+      clearCachedData() {
+        // 清理计算缓存
+        this.cachedAzimuthArcmin = null
+        this.cachedAltitudeArcmin = null
+        this.lastAzimuthValue = null
+        this.lastAltitudeValue = null
+        this.lastDragTime = 0
+        
+        // 清理日志数据
+        this.logs = []
+        this.logIndex = 0
+        
+        // 清理校准数据
+        this.calibrationPoints = []
+        this.targetPoint = null
+        this.fieldData = null
+        
+        // 清理位置数据
+        this.currentPosition = { ra: '00h 00m 00s', dec: '+00° 00\' 00"' }
+        this.targetPosition = { ra: '00h 00m 00s', dec: '+00° 00\' 00"' }
+        this.previousPosition = { ra: '00h 00m 00s', dec: '+00° 00\' 00"' }
+        
+        // 清理调整数据
+        this.adjustment = { azimuth: 0.0, altitude: 0.0 }
+        this.polarAxisOffset = { azimuth: 0, altitude: 0 }
+        
+        // 重置状态
+        this.isCalibrationComplete = false
+        this.isPolarAligned = false
+        this.calibrationLoopCount = 0
+        this.lastCalibrationProgress = 0
+        this.calibrationPhase = 'initial'
+      },
+
+      // ========================================
+      // 拖动控制方法
+      // ========================================
+      startDrag(event) {
+        if (!this.isMinimized && !this.isCollapsed) {
+          return
+        }
+
+        if (event.target.closest('.header-controls, .minimized-controls, .header-btn, .minimized-btn')) {
+          return
+        }
+
+        this.isDragging = true
+        this.isDraggingState = true
+
+        // 添加dragging类，移除过渡动画
+        this.$el.classList.add('dragging')
+
+        const rect = event.currentTarget.getBoundingClientRect()
+        const clientX = event.clientX || event.touches?.[0]?.clientX || 0
+        const clientY = event.clientY || event.touches?.[0]?.clientY || 0
+
+        this.dragOffset = {
+          x: clientX - rect.left,
+          y: clientY - rect.top
+        }
+
+        // 预计算并缓存尺寸，避免拖动时重复计算
+        this.updateCachedDimensions()
+
+        // 优化触摸事件处理
+        if (event.type === 'touchstart') {
+          document.addEventListener('touchmove', this.onDrag, { passive: false })
+          document.addEventListener('touchend', this.stopDrag, { passive: false })
+        } else {
+          document.addEventListener('mousemove', this.onDrag)
+          document.addEventListener('mouseup', this.stopDrag)
+        }
+      },
+
+      onDrag(event) {
+        if (!this.isDragging) return
+
+        // 阻止默认行为，提高触摸响应性
+        if (event.type === 'touchmove') {
+          event.preventDefault()
+        }
+
+        // 使用更高效的节流机制
+        const now = Date.now()
+        if (this.lastDragTime && now - this.lastDragTime < 16) return // 60fps限制
+        this.lastDragTime = now
+        
+        const clientX = event.clientX || event.touches?.[0]?.clientX || 0
+        const clientY = event.clientY || event.touches?.[0]?.clientY || 0
+
+        const newX = clientX - this.dragOffset.x
+        const newY = clientY - this.dragOffset.y
+
+        // 使用缓存的尺寸，避免重复计算
+        const maxX = window.innerWidth - this.cachedDimensions.width
+        const maxY = window.innerHeight - this.cachedDimensions.height
+
+        this.position = {
+          x: Math.max(0, Math.min(newX, maxX)),
+          y: Math.max(0, Math.min(newY, maxY))
+        }
+      },
+
+      stopDrag() {
+        this.isDragging = false
+        this.isDraggingState = false
+
+        // 移除dragging类，恢复过渡动画
+        this.$el.classList.remove('dragging')
+
+        // 清理所有事件监听器
+        this.cleanupDragListeners()
+      },
+
+      // 新增：更新缓存的尺寸信息
+      updateCachedDimensions() {
+        const widgetEl = this.$el?.querySelector?.(
+          this.isMinimized ? '.polar-alignment-minimized' : '.polar-alignment-widget'
+        )
+        if (widgetEl) {
+          const rect = widgetEl.getBoundingClientRect()
+          if (rect.width > 0 && rect.height > 0) {
+            this.cachedDimensions = { width: rect.width, height: rect.height }
+            return
+          }
+        }
+
+        if (this.isMinimized) {
+          this.cachedDimensions = { ...DIMENSIONS.MINIMIZED }
+        } else if (this.isCollapsed) {
+          this.cachedDimensions = { ...DIMENSIONS.COLLAPSED }
+        } else {
+          // 展开状态，使用基础尺寸
+          this.cachedDimensions = { ...DIMENSIONS.EXPANDED }
+        }
+      },
+
+      updateUiScale() {
+        if (this.isCollapsed || this.isMinimized) {
+          this.uiScale = 1
+          this.widthScale = 1
+          this.heightScale = 1
+          return
+        }
+
+        const viewport = window.visualViewport || window
+        const width = Number(viewport.width || window.innerWidth)
+        const height = Number(viewport.height || window.innerHeight)
+        const contentWidth = Math.max(1, width)
+        const xScale = Math.max(0.52, Math.min(1, contentWidth / 760))
+        const yScale = Math.max(0.52, Math.min(1, height / 600))
+
+        this.widthScale = Number(xScale.toFixed(3))
+        this.heightScale = Number(yScale.toFixed(3))
+        this.uiScale = this.heightScale
+      },
+
+      handleViewportResize() {
+        this.updateUiScale()
+        this.constrainPanelToViewport()
+      },
+
+      constrainPanelToViewport() {
+        this.$nextTick(() => {
+          this.updateUiScale()
+          this.updateCachedDimensions()
+          const margin = window.innerHeight <= 340 ? 6 : 0
+          const maxX = Math.max(margin, window.innerWidth - this.cachedDimensions.width - margin)
+          const maxY = Math.max(margin, window.innerHeight - this.cachedDimensions.height - margin)
+          this.position = {
+            x: Math.max(margin, Math.min(this.position.x, maxX)),
+            y: Math.max(margin, Math.min(this.position.y, maxY))
+          }
+        })
+      },
+
+      // 获取组件高度（优化版本）
+      getComponentHeight() {
+        // 如果正在拖动，使用缓存的尺寸
+        if (this.isDraggingState) {
+          return this.cachedDimensions.height
+        }
+
+        // 正常状态下的计算
+        if (this.isMinimized) {
+          return 80 // 最小化状态高度
+        } else if (this.isCollapsed) {
+          return 120 // 收缩状态高度
+        } else {
+          // 展开状态，根据内容自适应
+          const baseHeight = 400 // 基础高度
+          const logHeight = this.displayLogs.length > 0 ? 60 : 40
+          const adjustmentHeight = this.needsAzimuthAdjustment || this.needsAltitudeAdjustment ? 120 : 80
+          return Math.min(baseHeight + logHeight + adjustmentHeight, window.innerHeight * 0.8)
+        }
+      },
+
+      // ========================================
+      // 界面状态控制方法
+      // ========================================
+      toggleMinimize() {
+        this.isMinimized = !this.isMinimized
+        this.isCollapsed = false
+        this.updateUiScale()
+        // 更新缓存的尺寸信息
+        this.updateCachedDimensions()
+        this.addLog(this.isMinimized ? this.$t('Interface Minimized') : this.$t('Interface Expanded'), 'info')
+      },
+
+      toggleCollapse() {
+        this.isCollapsed = !this.isCollapsed
+        this.updateUiScale()
+        // 更新缓存的尺寸信息
+        this.updateCachedDimensions()
+        this.addLog(this.isCollapsed ? this.$t('Interface Collapsed') : this.$t('Interface Expanded'), 'info')
+      },
+
+      // === 轨迹画布相关 ===
+      toggleTrajectoryOverlay() {
+        this.showTrajectoryOverlay = !this.showTrajectoryOverlay
+        if (this.showTrajectoryOverlay) {
+          if (this.overlayMode === 'fullscreen') this.enableOverlayEventCapture(); else this.disableOverlayEventCapture()
+          this.$nextTick(() => {
+            this.initTrajectoryCanvas()
+            this.redrawTrajectory()
+          })
+        } else {
+          this.disableOverlayEventCapture()
+        }
+      },
+      switchToWindowed() {
+        this.overlayMode = 'windowed'
+        this.disableOverlayEventCapture()
+        this.resetViewMapping()
+        this.$nextTick(() => {
+          this.initTrajectoryCanvas()
+          this.redrawTrajectory()
+        })
+      },
+      switchToFullscreen() {
+        this.overlayMode = 'fullscreen'
+        this.enableOverlayEventCapture()
+        this.resetViewMapping()
+        this.clearTrajectoryCanvas()
+        this.$nextTick(() => {
+          this.initTrajectoryCanvas()
+          this.redrawTrajectory()
+        })
+      },
+      onOverlayWheel(e) {
+        // 已取消全屏缩放需求：忽略滚轮，仅防止穿透
+        e.preventDefault()
+      },
+      resetViewMapping() {
+        this.currentPxPerDeg = null
+        this.viewMinWorldX = null
+        this.viewMaxWorldX = null
+        this.viewMinWorldY = null
+        this.viewMaxWorldY = null
+        this.raUnwrapAnchor = null
+        this.viewOffsetXPx = 0
+        this.viewOffsetYPx = 0
+      },
+      // 清空视图映射，但保留 RA 展开锚点，防止清理旧点或模式切换时方向翻转
+      resetViewMappingKeepAnchor() {
+        const anchor = this.raUnwrapAnchor
+        this.currentPxPerDeg = null
+        this.viewMinWorldX = null
+        this.viewMaxWorldX = null
+        this.viewMinWorldY = null
+        this.viewMaxWorldY = null
+        this.viewOffsetXPx = 0
+        this.viewOffsetYPx = 0
+        this.raUnwrapAnchor = anchor
+      },
+      startWindowDrag(event) {
+        const e = event.touches ? event.touches[0] : event
+        this.windowDrag.active = true
+        this.windowDrag.offsetX = e.clientX - this.windowedRect.x
+        this.windowDrag.offsetY = e.clientY - this.windowedRect.y
+        window.addEventListener('mousemove', this.onWindowDragMove, { passive: false })
+        window.addEventListener('mouseup', this.stopWindowDrag, { passive: false })
+        window.addEventListener('touchmove', this.onWindowDragMove, { passive: false })
+        window.addEventListener('touchend', this.stopWindowDrag, { passive: false })
+      },
+      onWindowDragMove(event) {
+        if (!this.windowDrag.active) return
+        const e = event.touches ? event.touches[0] : event
+        const nx = e.clientX - this.windowDrag.offsetX
+        const ny = e.clientY - this.windowDrag.offsetY
+        this.windowedRect.x = Math.max(0, Math.min(nx, window.innerWidth - this.windowedRect.width))
+        this.windowedRect.y = Math.max(0, Math.min(ny, window.innerHeight - this.windowedRect.height))
+      },
+      stopWindowDrag() {
+        this.windowDrag.active = false
+        window.removeEventListener('mousemove', this.onWindowDragMove)
+        window.removeEventListener('mouseup', this.stopWindowDrag)
+        window.removeEventListener('touchmove', this.onWindowDragMove)
+        window.removeEventListener('touchend', this.stopWindowDrag)
+      },
+      enableOverlayEventCapture() {
+        // 拦截全局滚轮/触摸/鼠标事件，避免穿透到底图
+        const preventAll = e => { e.preventDefault(); e.stopPropagation(); }
+        this._overlayHandlers = this._overlayHandlers || {}
+        this._overlayHandlers.wheel = preventAll
+        this._overlayHandlers.touchmove = preventAll
+        this._overlayHandlers.mousedown = preventAll
+        window.addEventListener('wheel', this._overlayHandlers.wheel, { passive: false, capture: true })
+        window.addEventListener('touchmove', this._overlayHandlers.touchmove, { passive: false, capture: true })
+        window.addEventListener('mousedown', this._overlayHandlers.mousedown, { passive: false, capture: true })
+      },
+      disableOverlayEventCapture() {
+        if (!this._overlayHandlers) return
+        window.removeEventListener('wheel', this._overlayHandlers.wheel, { capture: true })
+        window.removeEventListener('touchmove', this._overlayHandlers.touchmove, { capture: true })
+        window.removeEventListener('mousedown', this._overlayHandlers.mousedown, { capture: true })
+        this._overlayHandlers = null
+      },
+      clearAllTrajectory() {
+        this.rawTrajectoryPoints = []
+        this.trajectoryPoints = []
+        this.lastRawPosition = null
+        this.resetViewMapping()
+        this.redrawTrajectory()
+      },
+      clearOldTrajectory() {
+        if (this.rawTrajectoryPoints.length <= 2) return
+        this.rawTrajectoryPoints = this.rawTrajectoryPoints.slice(-2)
+        this.trajectoryPoints = []
+        this.resetViewMappingKeepAnchor()
+        this.redrawTrajectory()
+      },
+      initTrajectoryCanvas() {
+        const canvas = this.$refs.trajectoryCanvas
+        if (!canvas) return
+        const dpr = window.devicePixelRatio || 1
+        let w, h, scaleX = 1, scaleY = 1
+        // 仅用于窗口模式下的等比缩放与居中
+        let uniformScale = 1
+        let offsetXPx = 0
+        let offsetYPx = 0
+
+        if (this.overlayMode === 'fullscreen') {
+          w = window.innerWidth
+          h = window.innerHeight
+          canvas.width = Math.round(w * dpr)
+          canvas.height = Math.round(h * dpr)
+          canvas.style.width = w + 'px'
+          canvas.style.height = h + 'px'
+        } else {
+          // 窗口模式：使用逻辑画布尺寸，绘制后整体缩放到窗口区域
+          const HEADER = 32
+          const vw = Math.max(50, Math.round(this.windowedRect.width))
+          const vh = Math.max(50, Math.round(this.windowedRect.height - HEADER))
+          const lw = this.baseCanvasLogicalSize.width
+          const lh = this.baseCanvasLogicalSize.height
+          // 计算将逻辑画布缩放到可视窗口的缩放比
+          scaleX = vw / lw
+          scaleY = vh / lh
+          // 为保持几何正交性，使用等比缩放（取较小者），多余空间留黑边并居中
+          uniformScale = Math.min(scaleX, scaleY)
+          offsetXPx = (vw - lw * uniformScale) / 2
+          offsetYPx = (vh - lh * uniformScale) / 2
+          // Canvas 显示尺寸 = 窗口尺寸，内部像素 = 显示尺寸 * DPR
+          w = vw
+          h = vh
+          canvas.style.width = vw + 'px'
+          canvas.style.height = vh + 'px'
+          canvas.width = Math.round(vw * dpr)
+          canvas.height = Math.round(vh * dpr)
+        }
+
+        const ctx = canvas.getContext('2d')
+        // 设置设备像素比缩放
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        // 窗口模式下使用等比缩放 + 平移，将逻辑画布缩放并居中到窗口区域
+        if (this.overlayMode === 'windowed') {
+          ctx.translate(offsetXPx, offsetYPx)
+          ctx.scale(uniformScale, uniformScale)
+        }
+        this.clearTrajectoryCanvas()
+        // 背景由 drawTargetMarker 统一绘制
+      },
+      clearTrajectoryCanvas() {
+        const canvas = this.$refs.trajectoryCanvas
+        if (!canvas) return
+        const ctx = canvas.getContext('2d')
+        ctx.save()
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        ctx.restore()
+      },
+      // === 视图映射与工具 ===
+      getCanvasGeom() {
+        const canvas = this.$refs.trajectoryCanvas
+        if (!canvas) return null
+        // 在窗口模式下，Canvas 内部逻辑为 baseCanvasLogicalSize，
+        // 外部通过 ctx.scale 显示到窗口，所以几何计算返回逻辑尺寸
+        const w = this.overlayMode === 'windowed' ? this.baseCanvasLogicalSize.width : canvas.clientWidth
+        const h = this.overlayMode === 'windowed' ? this.baseCanvasLogicalSize.height : canvas.clientHeight
+        const padX = Math.round(w * (this.viewPadRatioX || 0.12))
+        const padY = Math.round(h * (this.viewPadRatioY || 0.10))
+        return { w, h, padX, padY }
+      },
+      /**
+       * 获取观测者经纬度；若缺失则尝试异步重新获取。
+       * 返回值用于决定是走地平坐标还是退化为赤道坐标差值。
+       */
+      ensureObserverLocation() {
+        const loc = this.$store?.state?.currentLocation || {}
+        const lat = Number(loc.lat)
+        const lon = Number(loc.lng)
+        // 视 (0,0) 为“未设置位置”，需要重试获取
+        const hasLatLon = Number.isFinite(lat) && Number.isFinite(lon) &&
+          !(lat === 0 && lon === 0)
+
+        // 若当前没有有效经纬度，则触发一次异步重试
+        if (!hasLatLon) {
+          this.retryObserverLocationIfNeeded()
+        }
+
+        return { hasLatLon, lat, lon }
+      },
+      /**
+       * 异步重新获取观测地经纬度，并写回 Vuex。
+       * 每次发现经纬度缺失或为 (0,0) 时都会调用本方法；
+       * 若当前已有一次重试在进行中，则直接返回，避免并发调用。
+       */
+      retryObserverLocationIfNeeded() {
+        if (this.locationRetryInProgress) return
+        if (!this.$store) return
+
+        this.locationRetryInProgress = true
+
+        swh.getGeolocation()
+          .then(pos => {
+            if (!pos || !Number.isFinite(pos.lat) || !Number.isFinite(pos.lng)) {
+              throw new Error('Invalid geolocation position')
+            }
+            return swh.geoCodePosition(pos, this)
+          })
+          .then(loc => {
+            if (loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng)) {
+              const useAuto = this.$store.state.useAutoLocation
+              const mutation = useAuto ? 'setAutoDetectedLocation' : 'setCurrentLocation'
+              this.$store.commit(mutation, loc)
+              this.addLog(this.$t('Observer Location Updated'), 'success')
+            } else {
+              this.addLog(this.$t('Warning: Missing Observer Location, Using Equatorial Trajectory'), 'warning')
+            }
+          })
+          .catch(err => {
+            if (process.env.NODE_ENV === 'development') {
+              console.error('Failed to refresh observer location, fallback to equatorial trajectory:', err)
+            }
+            this.addLog(this.$t('Warning: Missing Observer Location, Using Equatorial Trajectory'), 'warning')
+          })
+          .finally(() => {
+            this.locationRetryInProgress = false
+          })
+      },
+      worldForPoint(raDeg, decDeg, timeMsOrDate = null) {
+        // 使用地平坐标（Az/Alt）绘制：世界坐标以“目标点”为原点
+        // 若当前经纬度未知，则退化为赤道坐标差值（ΔRA, ΔDEC）
+        if (!this.targetRawPosition) return { x: 0, y: 0 }
+        const { hasLatLon, lat, lon } = this.ensureObserverLocation()
+        let dx, dy
+        if (hasLatLon) {
+          const t = (timeMsOrDate instanceof Date) ? timeMsOrDate : new Date(timeMsOrDate || Date.now())
+          const cur = this.equatorialToHorizontal(raDeg, decDeg, t, lat, lon)
+          const tgt = this.equatorialToHorizontal(this.targetRawPosition.ra, this.targetRawPosition.dec, t, lat, lon)
+          dx = this.normalizeAzDelta(cur.az - tgt.az) // dAz（考虑 0/360 包裹）
+          dy = cur.alt - tgt.alt                      // dAlt
+        } else {
+          // 退化为 RA/DEC 差值，保证在无经纬度信息时仍然能正确绘制轨迹和比例尺
+          dx = this.normalizeRaDelta(raDeg - this.targetRawPosition.ra)
+          dy = decDeg - this.targetRawPosition.dec
+        }
+        // 使用基于首点的展开锚点，避免跨 0/360 跳变
+        if (this.raUnwrapAnchor != null) {
+          while (dx - this.raUnwrapAnchor > 180) dx -= 360
+          while (dx - this.raUnwrapAnchor < -180) dx += 360
+        }
+        return { x: dx, y: dy }
+      },
+      makeWorldSeq(rawPoints) {
+        if (!this.targetRawPosition || !rawPoints || rawPoints.length === 0) return []
+        const { hasLatLon, lat, lon } = this.ensureObserverLocation()
+
+        if (!hasLatLon) {
+          return equatorialRelativeTrajectory(rawPoints, this.targetRawPosition)
+        }
+
+        const times = rawPoints.map((p, idx) => {
+          if (p.t) return new Date(p.t)
+          if (idx > 0 && rawPoints[idx - 1].t) return new Date(rawPoints[idx - 1].t)
+          return new Date()
+        })
+        const targAltAz = times.map(t => this.equatorialToHorizontal(this.targetRawPosition.ra, this.targetRawPosition.dec, t, lat, lon))
+        const curAltAz = rawPoints.map((p, i) => this.equatorialToHorizontal(p.ra, p.dec, times[i], lat, lon))
+        const dAzNorm = curAltAz.map((c, i) => this.normalizeAzDelta(c.az - targAltAz[i].az))
+        let anchor = this.raUnwrapAnchor
+        if (anchor == null && dAzNorm.length > 0) anchor = dAzNorm[0]
+        const aligned = dAzNorm.map(x => {
+          let v = x
+          while (v - anchor > 180) v -= 360
+          while (v - anchor < -180) v += 360
+          return v
+        })
+        const dAzs = this.unwrapRaDeltaSequence(aligned)
+        return rawPoints.map((p, i) => ({ x: dAzs[i], y: curAltAz[i].alt - targAltAz[i].alt }))
+      },
+      // 基于“全量轨迹”的连续展开，返回用于垂线的最后两点世界坐标（允许超出常规范围）
+      getWorldABForPerp() {
+        if (!this.targetRawPosition || this.rawTrajectoryPoints.length < 2) return null
+        const { hasLatLon, lat, lon } = this.ensureObserverLocation()
+        const all = this.rawTrajectoryPoints
+        const tA = new Date(all[all.length - 2].t || Date.now())
+        const tB = new Date(all[all.length - 1].t || Date.now())
+
+        if (!hasLatLon) {
+          // 无经纬度：使用 RA/DEC 差值作为世界坐标
+          const dRaA = this.normalizeRaDelta(all[all.length - 2].ra - this.targetRawPosition.ra)
+          const dRaB = this.normalizeRaDelta(all[all.length - 1].ra - this.targetRawPosition.ra)
+          const A = { x: dRaA, y: all[all.length - 2].dec - this.targetRawPosition.dec }
+          const B = { x: dRaB, y: all[all.length - 1].dec - this.targetRawPosition.dec }
+          return { A, B }
+        }
+
+        const tgtA = this.equatorialToHorizontal(this.targetRawPosition.ra, this.targetRawPosition.dec, tA, lat, lon)
+        const tgtB = this.equatorialToHorizontal(this.targetRawPosition.ra, this.targetRawPosition.dec, tB, lat, lon)
+        const curA = this.equatorialToHorizontal(all[all.length - 2].ra, all[all.length - 2].dec, tA, lat, lon)
+        const curB = this.equatorialToHorizontal(all[all.length - 1].ra, all[all.length - 1].dec, tB, lat, lon)
+        let dxA = this.normalizeAzDelta(curA.az - tgtA.az)
+        let dxB = this.normalizeAzDelta(curB.az - tgtB.az)
+        if (this.raUnwrapAnchor != null) {
+          while (dxA - this.raUnwrapAnchor > 180) dxA -= 360
+          while (dxA - this.raUnwrapAnchor < -180) dxA += 360
+          while (dxB - this.raUnwrapAnchor > 180) dxB -= 360
+          while (dxB - this.raUnwrapAnchor < -180) dxB += 360
+        }
+        const A = { x: dxA, y: curA.alt - tgtA.alt }
+        const B = { x: dxB, y: curB.alt - tgtB.alt }
+        return { A, B }
+      },
+      screenForWorld(wx, wy) {
+        const g = this.getCanvasGeom()
+        if (!g || !Number.isFinite(this.currentPxPerDeg)) return { x: 0, y: 0 }
+        const { w, h, padX, padY } = g
+        const x = padX + this.viewOffsetXPx + (wx - (this.viewMinWorldX || 0)) * this.currentPxPerDeg
+        const y = h - padY - this.viewOffsetYPx - (wy - (this.viewMinWorldY || 0)) * this.currentPxPerDeg
+        return { x, y }
+      },
+      /**
+       * 根据当前点与目标点的角距离，更新目标点多级精度圈（度/角分/角秒）
+       * 并在跨越 1° 阈值（进入角分级）时清除旧轨迹、重置视图比例。
+       * @param {number} rawRaDeg - 当前赤经（度）
+       * @param {number} rawDecDeg - 当前赤纬（度）
+       * @param {number} timeMs - 时间戳（毫秒）
+       */
+      updateAlignmentRingsAndScale(rawRaDeg, rawDecDeg, timeMs = Date.now()) {
+        if (!this.targetRawPosition) return
+
+        // 计算当前与目标的角距离：直接复用世界坐标系，保证与轨迹绘制一致，
+        // 这样无论是真实 Alt/Az 还是测试用的 RA/DEC 差值，缩放与圈级切换都是连续的。
+        const world = this.worldForPoint(rawRaDeg, rawDecDeg, timeMs)
+        const rDeg = Math.hypot(world.x, world.y)
+
+        this.alignmentCurrentDistanceDeg = rDeg
+
+        const scale = alignmentScaleForDistance(rDeg)
+        const newStage = scale.stage
+
+        const prevStage = this.alignmentScaleStage || 'deg_10_1'
+        this.alignmentScaleStage = newStage
+
+        this.outerRingDeg = scale.outerRingDeg
+        this.innerRingDeg = scale.innerRingDeg
+
+        // 每次“精度级别”发生变化时（degree ↔ arcmin ↔ arcsec），
+        // 都视为进入一个新的工作阶段：清除旧轨迹（保留最近两点）并重新计算比例尺。
+        // 使用已有的 clearOldTrajectory()：保留最近两点、重置视图映射锚点并立即重绘。
+        if (prevStage !== newStage && this.rawTrajectoryPoints && this.rawTrajectoryPoints.length > 2) {
+          this.clearOldTrajectory()
+        }
+
+        this.targetRingColor = scale.color
+      },
+      ensureViewMappingInitialized(seqWorld) {
+        if (!seqWorld || seqWorld.length === 0) return
+        if (this.currentPxPerDeg != null && this.viewMinWorldX != null) return
+        const g = this.getCanvasGeom()
+        if (!g) return
+        const { w, h, padX, padY } = g
+        // 起始点：序列第一个；目标原点为 (0,0)
+        const first = seqWorld[0]
+        // 初始化展开锚点为首点 X（相对目标）
+        this.raUnwrapAnchor = first.x
+
+        // 统一思路：每个“级别”的外圈角半径由 alignmentScaleStage / outerRingDeg 决定，
+        // 在屏幕上占据大致固定比例；轨迹只是在这个固定外圈内收缩。
+        let radiusDeg = Number(this.outerRingDeg)
+        if (!Number.isFinite(radiusDeg) || radiusDeg <= 0) {
+          radiusDeg = this.getTargetRingDeg()
+        }
+        // 兜底：如果外圈半径仍然非法，则退化为基于数据的最大半径
+        if (!Number.isFinite(radiusDeg) || radiusDeg <= 0) {
+          let maxR = 0
+          for (const p of seqWorld) {
+            if (!p) continue
+            const rx = Number.isFinite(p.x) ? Math.abs(p.x) : 0
+            const ry = Number.isFinite(p.y) ? Math.abs(p.y) : 0
+            const r = Math.max(rx, ry)
+            if (r > maxR) maxR = r
+          }
+          radiusDeg = Math.max(maxR, 1e-3)
+        }
+
+        // 目标：外圈半径在屏幕内占据 ~45% 的可用尺寸（稍微放大一点，保证“近景感”）
+        const usableW = w - 2 * padX
+        const usableH = h - 2 * padY
+        const targetRadiusPx = Math.min(usableW, usableH) * 0.45
+        const pxPerDeg = targetRadiusPx / radiusDeg
+        this.currentPxPerDeg = pxPerDeg
+
+        // 视图世界边界：以 (0,0) 为中心的正方形 [-radiusDeg, radiusDeg]
+        this.viewMinWorldX = -radiusDeg
+        this.viewMaxWorldX = radiusDeg
+        this.viewMinWorldY = -radiusDeg
+        this.viewMaxWorldY = radiusDeg
+
+        // 初次视图内容居中：确保目标点 (0,0) 精确映射到画布中心
+        // 计算方式：centerX = padX + viewOffsetXPx + (0 - viewMinWorldX) * pxPerDeg
+        // 我们希望 centerX = padX + usableW/2，所以：
+        // viewOffsetXPx = usableW/2 - (0 - viewMinWorldX) * pxPerDeg = usableW/2 - radiusDeg * pxPerDeg
+        this.viewOffsetXPx = Math.round(usableW / 2 - radiusDeg * this.currentPxPerDeg)
+        this.viewOffsetYPx = Math.round(usableH / 2 - radiusDeg * this.currentPxPerDeg)
+      },
+      maybeExpandViewForPoint(wx, wy) {
+        // 若点在当前屏幕内，则不更新比例尺；若越界，扩展边界并仅缩小比例尺
+        const g = this.getCanvasGeom()
+        if (!g || this.currentPxPerDeg == null) return
+        const { w, h, padX, padY } = g
+        const px = padX + this.viewOffsetXPx + (wx - this.viewMinWorldX) * this.currentPxPerDeg
+        const py = h - padY - this.viewOffsetYPx - (wy - this.viewMinWorldY) * this.currentPxPerDeg
+        const inside = px >= padX && px <= (w - padX) && py >= padY && py <= (h - padY)
+        if (inside) return
+        // 扩展世界边界到包含该点，同时保持以 (0,0) 为中心对称
+        const halfX = Math.max(
+          1e-6,
+          Math.abs(this.viewMinWorldX),
+          Math.abs(this.viewMaxWorldX),
+          Math.abs(wx)
+        )
+        const halfY = Math.max(
+          1e-6,
+          Math.abs(this.viewMinWorldY),
+          Math.abs(this.viewMaxWorldY),
+          Math.abs(wy)
+        )
+        const spanX = halfX * 2
+        const spanY = halfY * 2
+        const scaleX = (w - 2 * padX) / spanX
+        const scaleY = (h - 2 * padY) / spanY
+        const candidate = Math.min(scaleX, scaleY)
+        // 仅缩小
+        this.currentPxPerDeg = this.currentPxPerDeg == null ? candidate : Math.min(this.currentPxPerDeg, candidate)
+        this.viewMinWorldX = -halfX
+        this.viewMaxWorldX = halfX
+        this.viewMinWorldY = -halfY
+        this.viewMaxWorldY = halfY
+        // 重新计算偏移，确保目标点 (0,0) 始终在画布中心
+        const usableW = w - 2 * padX
+        const usableH = h - 2 * padY
+        this.viewOffsetXPx = Math.round(usableW / 2 - halfX * this.currentPxPerDeg)
+        this.viewOffsetYPx = Math.round(usableH / 2 - halfY * this.currentPxPerDeg)
+      },
+      drawTargetMarker(scaleOverride = null) {
+        const canvas = this.$refs.trajectoryCanvas
+        if (!canvas) return
+        const ctx = canvas.getContext('2d')
+        const g = this.getCanvasGeom()
+        if (!g) return
+        const { w, h } = g
+        ctx.save()
+        // 背景
+        ctx.fillStyle = 'black'
+        ctx.fillRect(0, 0, w, h)
+        // 目标圆环：始终只有“外圈 + 内圈”两级（但会根据 alignmentScaleStage 在 5 个级别间切换）
+        const center = this.screenForWorld(0, 0)
+        const scale = (scaleOverride != null ? scaleOverride : this.currentPxPerDeg) || 40
+
+        // 将细分级别归并为基础单位级别：'degree' | 'arcmin' | 'arcsec'
+        const rawStage = this.alignmentScaleStage || 'deg_10_1'
+        let stage = 'degree'
+        if (rawStage.startsWith('arcmin')) stage = 'arcmin'
+        else if (rawStage.startsWith('arcsec')) stage = 'arcsec'
+
+        let outerDeg = Number(this.outerRingDeg)
+        let innerDeg = Number(this.innerRingDeg)
+        if (!Number.isFinite(outerDeg) || outerDeg <= 0) {
+          // 退化为视场半径
+          outerDeg = this.getTargetRingDeg()
+        }
+        if (!Number.isFinite(innerDeg) || innerDeg <= 0 || innerDeg >= outerDeg) {
+          innerDeg = 0
+        }
+
+        const color = this.targetRingColor || '#FFD54F'
+        ctx.strokeStyle = color
+        ctx.lineWidth = 2
+
+        const maxRpx = Math.min(w, h) * 0.45
+        // 所有级别的外圈半径都严格由“角度 * 比例尺”决定，再夹在 [6, maxRpx] 范围内，
+        // 保证 10°/1°、60'/10'/1'、60\"/10\"/1\" 等几何位置与数值一致。
+        let outerPx = outerDeg * scale
+        outerPx = Math.max(6, Math.min(maxRpx, outerPx))
+
+        ctx.beginPath()
+        ctx.arc(center.x, center.y, outerPx, 0, Math.PI * 2)
+        ctx.stroke()
+
+        let innerPx = 0
+        if (innerDeg > 0) {
+          innerPx = innerDeg * scale
+          innerPx = Math.max(4, Math.min(outerPx * 0.95, innerPx))
+          ctx.beginPath()
+          ctx.arc(center.x, center.y, innerPx, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+
+        // 目标点：还原为外圈同色的实心小点（受比例尺影响的是外/内圈，不是这个点）
+        ctx.fillStyle = color
+        ctx.beginPath()
+        ctx.arc(center.x, center.y, 3, 0, Math.PI * 2)
+        ctx.fill()
+
+        // 在目标位置的圈上标注当前外圈 / 内圈数值和当前偏差
+        ctx.fillStyle = color
+        ctx.font = '12px sans-serif'
+        ctx.textBaseline = 'middle'
+
+        let outerLabel = ''
+        let innerLabel = ''
+
+        if (stage === 'degree') {
+          outerLabel = `${outerDeg.toFixed(1)}°`
+          if (innerDeg > 0) innerLabel = `${innerDeg.toFixed(1)}°`
+        } else if (stage === 'arcmin') {
+          const outerArcmin = outerDeg * 60.0
+          outerLabel = `${outerArcmin.toFixed(0)}'`
+          if (innerDeg > 0) innerLabel = `${(innerDeg * 60.0).toFixed(1)}'`
+        } else if (stage === 'arcsec') {
+          const outerArcsec = outerDeg * 3600.0
+          outerLabel = `${outerArcsec.toFixed(0)}\"`
+          if (innerDeg > 0) innerLabel = `${(innerDeg * 3600.0).toFixed(1)}\"`
+        }
+
+        // 标注外圈半径数值（在外圈右侧）
+        if (outerLabel) {
+          ctx.fillText(outerLabel, center.x + outerPx + 8, center.y)
+        }
+        // 标注内圈半径数值（在内圈右上）
+        if (innerLabel && innerPx > 0) {
+          ctx.fillText(innerLabel, center.x + innerPx + 8, center.y - 14)
+        }
+
+        // 标注当前与目标的偏差（度 / 角分 / 角秒综合显示）
+        if (Number.isFinite(this.alignmentCurrentDistanceDeg)) {
+          const dDeg = this.alignmentCurrentDistanceDeg
+          const totalArcsec = dDeg * 3600.0
+          let distText
+          if (totalArcsec >= 3600) {
+            // >= 1 度
+            distText = `${dDeg.toFixed(2)}°`
+          } else if (totalArcsec >= 60) {
+            // [1', 1°)
+            const arcmin = dDeg * 60.0
+            distText = `${arcmin.toFixed(2)}'`
+          } else {
+            // < 1'
+            distText = `${totalArcsec.toFixed(2)}\"`
+          }
+          ctx.fillText(`Δ ${distText}`, center.x, center.y + (outerPx || 0) + 16)
+        }
+        ctx.restore()
+      },
+      drawTargetAtCenter(ringDegOverride = null) {
+        const canvas = this.$refs.trajectoryCanvas
+        if (!canvas) return
+        const ctx = canvas.getContext('2d')
+        const cx = Math.round((this.overlayMode === 'windowed' ? this.baseCanvasLogicalSize.width : canvas.clientWidth) / 2)
+        const cy = Math.round((this.overlayMode === 'windowed' ? this.baseCanvasLogicalSize.height : canvas.clientHeight) / 2)
+        ctx.save()
+        // 黑色背景
+        ctx.fillStyle = 'black'
+        const bw = this.overlayMode === 'windowed' ? this.baseCanvasLogicalSize.width : canvas.clientWidth
+        const bh = this.overlayMode === 'windowed' ? this.baseCanvasLogicalSize.height : canvas.clientHeight
+        ctx.fillRect(0, 0, bw, bh)
+        // 目标点环（空心）+ 中心小点
+        const base = this.autoFitPxPerDeg || 40
+        const scalePxPerDeg = base
+        const ringDeg = ringDegOverride !== null ? ringDegOverride : this.getTargetRingDeg()
+        const halfW = bw / 2
+        const halfH = bh / 2
+        const pad = 24
+        const rMax = Math.max(6, Math.min(halfW - pad, halfH - pad))
+        const rPx = Math.max(6, Math.min(rMax, ringDeg * scalePxPerDeg))
+        // 空心圆
+        ctx.strokeStyle = '#4CAF50'
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.arc(cx, cy, rPx, 0, Math.PI * 2)
+        ctx.stroke()
+        // 中心小点
+        ctx.fillStyle = '#4CAF50'
+        ctx.beginPath()
+        ctx.arc(cx, cy, 3, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
+      },
+      getTargetRingDeg() {
+        // 环大小不超过视场半径（取 RA/DEC 跨度的较小一半，留 90% 边距）
+        if (!this.fieldData) return 0.3
+        const ras = [this.fieldData.ra0, this.fieldData.ra1, this.fieldData.ra2, this.fieldData.ra3]
+        const decs = [this.fieldData.dec0, this.fieldData.dec1, this.fieldData.dec2, this.fieldData.dec3]
+        const raSpan = Math.max(...ras) - Math.min(...ras)
+        const decSpan = Math.max(...decs) - Math.min(...decs)
+        const halfMin = Math.max(0.01, Math.min(raSpan, decSpan) / 2)
+        return halfMin * 0.9
+      },
+      raDecToCanvasDelta(raDeg, decDeg) {
+        // 将相对目标点的 (ΔRA, ΔDEC) 转换为画布像素偏移。
+        // 使用自适应像素/度比例，并在全屏模式下再乘以用户缩放因子。
+        const base = this.autoFitPxPerDeg || 40
+        const scalePxPerDeg = base
+        // 固定约定：RA 增大向右
+        const dx = (this.normalizeRaDelta(raDeg)) * scalePxPerDeg
+        const dy = (-decDeg) * scalePxPerDeg
+        return { dx, dy }
+      },
+      normalizeRaDelta(deltaDeg) {
+        return normalizeAngleDelta(deltaDeg)
+      },
+      normalizeAzDelta(deltaDeg) {
+        return normalizeAngleDelta(deltaDeg)
+      },
+      addVector3(a, b) {
+        return addVector3(a, b)
+      },
+      subtractVector3(a, b) {
+        return subtractVector3(a, b)
+      },
+      scaleVector3(v, s) {
+        return scaleVector3(v, s)
+      },
+      dotProduct3(a, b) {
+        return dotProduct3(a, b)
+      },
+      horizontalToCartesian(azDeg, altDeg, radius = 1) {
+        return horizontalToCartesian(azDeg, altDeg, radius)
+      },
+      cartesianToHorizontal(cart) {
+        return cartesianToHorizontal(cart)
+      },
+      adjustmentValueToDegrees(value, unit) {
+        if (!Number.isFinite(value)) return NaN
+        return this.unitToArcmin(value, unit) / 60.0
+      },
+      computeWorldDirectionForRotationAxis(axisVec, pointingVec, currentHorizontal) {
+        const tangent = this.crossProduct(axisVec, pointingVec)
+        const tangentLen = this.vectorLength(tangent)
+        if (!Number.isFinite(tangentLen) || tangentLen < 1e-9) return null
+
+        const epsRad = 1e-4
+        const moved = this.normalizeVector(
+          this.addVector3(pointingVec, this.scaleVector3(tangent, epsRad))
+        )
+        const movedHorizontal = this.cartesianToHorizontal(moved)
+        if (!Number.isFinite(movedHorizontal.az) || !Number.isFinite(movedHorizontal.alt)) return null
+
+        return {
+          x: this.normalizeAzDelta(movedHorizontal.az - currentHorizontal.az) / epsRad,
+          y: (movedHorizontal.alt - currentHorizontal.alt) / epsRad
+        }
+      },
+      buildIdealGuideTrajectoryWorld() {
+        if (!this.targetRawPosition || !this.fieldData) return null
+        if (!Number.isFinite(this.fieldData.fakePolarRA) || !Number.isFinite(this.fieldData.fakePolarDEC)) return null
+
+        const { hasLatLon, lat, lon } = this.ensureObserverLocation()
+        if (!hasLatLon) return null
+
+        const lastRaw = this.rawTrajectoryPoints[this.rawTrajectoryPoints.length - 1]
+        const currentRa = lastRaw?.ra ?? this.fieldData.ra
+        const currentDec = lastRaw?.dec ?? this.fieldData.dec
+        const timeRef = new Date(lastRaw?.t || Date.now())
+        if (!Number.isFinite(currentRa) || !Number.isFinite(currentDec)) return null
+
+        const currentHorizontal = this.equatorialToHorizontal(currentRa, currentDec, timeRef, lat, lon)
+        const fakePolarHorizontal = this.equatorialToHorizontal(this.fieldData.fakePolarRA, this.fieldData.fakePolarDEC, timeRef, lat, lon)
+        if (![currentHorizontal.az, currentHorizontal.alt, fakePolarHorizontal.az, fakePolarHorizontal.alt].every(Number.isFinite)) {
+          return null
+        }
+
+        const pointingVec = this.horizontalToCartesian(currentHorizontal.az, currentHorizontal.alt)
+        const poleVec = this.horizontalToCartesian(fakePolarHorizontal.az, fakePolarHorizontal.alt)
+        const upVec = { x: 0, y: 0, z: 1 }
+        const eastVec = { x: 1, y: 0, z: 0 }
+
+        const upProj = this.dotProduct3(upVec, poleVec)
+        let altLike = null
+        if (Math.abs(Math.abs(upProj) - 1.0) < 1e-6) {
+          altLike = this.subtractVector3(eastVec, this.scaleVector3(poleVec, this.dotProduct3(eastVec, poleVec)))
+        } else {
+          altLike = this.subtractVector3(upVec, this.scaleVector3(poleVec, upProj))
+        }
+        const altLikeLen = this.vectorLength(altLike)
+        if (!Number.isFinite(altLikeLen) || altLikeLen < 1e-9) return null
+
+        const eAltLike = this.normalizeVector(altLike)
+        const eAzLike = this.normalizeVector(this.crossProduct(poleVec, eAltLike))
+        const azAxis = this.scaleVector3(eAltLike, -1)
+        const altAxis = eAzLike
+
+        const azBasis = this.computeWorldDirectionForRotationAxis(azAxis, pointingVec, currentHorizontal)
+        const altBasis = this.computeWorldDirectionForRotationAxis(altAxis, pointingVec, currentHorizontal)
+        if (!azBasis || !altBasis) return null
+
+        const azAdjustmentDeg = this.adjustmentValueToDegrees(this.adjustment.azimuth, this.adjustmentUnit)
+        const altAdjustmentDeg = this.adjustmentValueToDegrees(this.adjustment.altitude, this.adjustmentUnit)
+        if (![azAdjustmentDeg, altAdjustmentDeg].every(Number.isFinite)) return null
+
+        const origin = this.worldForPoint(currentRa, currentDec, timeRef)
+        const targetDelta = { x: -origin.x, y: -origin.y }
+        let direction = {
+          x: azBasis.x * azAdjustmentDeg + altBasis.x * altAdjustmentDeg,
+          y: azBasis.y * azAdjustmentDeg + altBasis.y * altAdjustmentDeg
+        }
+
+        const directNorm = Math.hypot(targetDelta.x, targetDelta.y)
+        const dirNorm = Math.hypot(direction.x, direction.y)
+        if ((!Number.isFinite(dirNorm) || dirNorm < 1e-8) && directNorm < 1e-8) return null
+        if (!Number.isFinite(dirNorm) || dirNorm < 1e-8) {
+          direction = targetDelta
+        }
+        if ((direction.x * targetDelta.x + direction.y * targetDelta.y) < 0) {
+          direction = { x: -direction.x, y: -direction.y }
+        }
+        return { origin, direction }
+      },
+      clipWorldLineToView(origin, direction) {
+        if (!origin || !direction) return null
+        const xmin = this.viewMinWorldX
+        const xmax = this.viewMaxWorldX
+        const ymin = this.viewMinWorldY
+        const ymax = this.viewMaxWorldY
+        if (![xmin, xmax, ymin, ymax].every(Number.isFinite)) return null
+
+        let tMin = -Infinity
+        let tMax = Infinity
+        const updateRange = (p, d, minV, maxV) => {
+          if (Math.abs(d) < 1e-12) {
+            return p >= minV && p <= maxV
+          }
+          const t1 = (minV - p) / d
+          const t2 = (maxV - p) / d
+          tMin = Math.max(tMin, Math.min(t1, t2))
+          tMax = Math.min(tMax, Math.max(t1, t2))
+          return tMin <= tMax
+        }
+
+        if (!updateRange(origin.x, direction.x, xmin, xmax)) return null
+        if (!updateRange(origin.y, direction.y, ymin, ymax)) return null
+
+        return {
+          start: {
+            x: origin.x + direction.x * tMin,
+            y: origin.y + direction.y * tMin
+          },
+          end: {
+            x: origin.x + direction.x * tMax,
+            y: origin.y + direction.y * tMax
+          }
+        }
+      },
+      drawIdealGuideAuxLine() {
+        const ideal = this.buildIdealGuideTrajectoryWorld()
+        if (!ideal) return false
+
+        const clipped = this.clipWorldLineToView(ideal.origin, ideal.direction)
+        if (!clipped) return false
+
+        const canvas = this.$refs.trajectoryCanvas
+        if (!canvas) return false
+        const ctx = canvas.getContext('2d')
+        const startPx = this.screenForWorld(clipped.start.x, clipped.start.y)
+        const endPx = this.screenForWorld(clipped.end.x, clipped.end.y)
+        const originPx = this.screenForWorld(ideal.origin.x, ideal.origin.y)
+
+        const dirNorm = Math.hypot(ideal.direction.x, ideal.direction.y)
+        if (!Number.isFinite(dirNorm) || dirNorm < 1e-8) return false
+        const arrowWorldLen = Math.max(this.outerRingDeg * 0.35, 10.0 / 3600.0)
+        const arrowTarget = this.screenForWorld(
+          ideal.origin.x + ideal.direction.x / dirNorm * arrowWorldLen,
+          ideal.origin.y + ideal.direction.y / dirNorm * arrowWorldLen
+        )
+
+        ctx.save()
+        ctx.setLineDash([8, 6])
+        ctx.lineWidth = 1.5
+        ctx.strokeStyle = '#4DD0E1'
+        ctx.beginPath()
+        ctx.moveTo(startPx.x, startPx.y)
+        ctx.lineTo(endPx.x, endPx.y)
+        ctx.stroke()
+        ctx.restore()
+
+        this.drawArrow(originPx.x, originPx.y, arrowTarget.x, arrowTarget.y, '#4DD0E1')
+        return true
+      },
+
+      // === 轨迹点合并/追加（按 Alt/Az 容差） ===
+      appendRawTrajectoryPoint(raDeg, decDeg, timeMs = Date.now()) {
+        if (!Number.isFinite(raDeg) || !Number.isFinite(decDeg)) return
+        // 动态合并容差：
+        // - 以“希望的最小像素间距 trajectoryMergeTolPx”为主，根据当前比例尺换算为角度；
+        // - 若当前还没有有效比例尺，则退化为固定角分（trajectoryMergeTolArcmin）。
+        let tolDeg = 0
+        const baseArcmin = Number(this.trajectoryMergeTolArcmin) || 0
+        if (Number.isFinite(this.currentPxPerDeg) && this.currentPxPerDeg > 0 && this.trajectoryMergeTolPx > 0) {
+          const byPixel = this.trajectoryMergeTolPx / this.currentPxPerDeg  // deg
+          const byArcmin = baseArcmin / 60.0
+          // 取两者较小值，避免在远距离时合并过猛
+          tolDeg = byArcmin > 0 ? Math.min(byPixel, byArcmin) : byPixel
+        } else {
+          tolDeg = baseArcmin / 60.0
+        }
+        const last = this.rawTrajectoryPoints[this.rawTrajectoryPoints.length - 1]
+        if (!last) {
+          this.rawTrajectoryPoints.push({ ra: raDeg, dec: decDeg, t: timeMs })
+          return
+        }
+        // 使用与绘制相同的“世界坐标系”来计算轨迹点之间的距离，
+        // 保证合并容差是基于“最后一个实际绘制的点”的位置。
+        const curWorld = this.worldForPoint(raDeg, decDeg, timeMs)
+        const lastWorld = this.worldForPoint(last.ra, last.dec, last.t || timeMs)
+        const dWx = curWorld.x - lastWorld.x
+        const dWy = curWorld.y - lastWorld.y
+        const sep = Math.hypot(dWx, dWy)
+        if (sep <= tolDeg) {
+          // 合并：更新最后一点为当前值（保持时间最新）
+          last.ra = raDeg
+          last.dec = decDeg
+          last.t = timeMs
+        } else {
+          this.rawTrajectoryPoints.push({ ra: raDeg, dec: decDeg, t: timeMs })
+        }
+      },
+      unwrapRaDeltaSequence(dRaDegList) {
+        return unwrapAngleSequence(dRaDegList)
+      },
+      appendTrajectoryPoint(rawRaDeg, rawDecDeg) {
+        // 已保留以兼容调用，但当前重绘使用 redrawTrajectory 覆盖全量绘制
+        if (!this.targetRawPosition) return
+        const canvas = this.$refs.trajectoryCanvas
+        if (!canvas) return
+        const cx = Math.round((this.overlayMode === 'windowed' ? this.baseCanvasLogicalSize.width : canvas.clientWidth) / 2)
+        const cy = Math.round((this.overlayMode === 'windowed' ? this.baseCanvasLogicalSize.height : canvas.clientHeight) / 2)
+        const dRa = rawRaDeg - this.targetRawPosition.ra
+        const dDec = rawDecDeg - this.targetRawPosition.dec
+        const { dx, dy } = this.raDecToCanvasDelta(dRa, dDec)
+        const point = { x: cx + dx, y: cy + dy }
+        this.trajectoryPoints.push(point)
+        this.drawPoint(point.x, point.y, '#FFD54F')
+      },
+      drawPoint(x, y, color) {
+        const canvas = this.$refs.trajectoryCanvas
+        if (!canvas) return
+        const ctx = canvas.getContext('2d')
+        ctx.save()
+        ctx.fillStyle = color || '#00BFFF'
+        ctx.beginPath()
+        ctx.arc(x, y, 3, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
+      },
+      drawArrow(x1, y1, x2, y2, color) {
+        const canvas = this.$refs.trajectoryCanvas
+        if (!canvas) return
+        const ctx = canvas.getContext('2d')
+        ctx.save()
+        ctx.strokeStyle = color || '#FFD54F'
+        ctx.fillStyle = color || '#FFD54F'
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(x1, y1)
+        ctx.lineTo(x2, y2)
+        ctx.stroke()
+        // 箭头
+        const angle = Math.atan2(y2 - y1, x2 - x1)
+        const headLen = 8
+        ctx.beginPath()
+        ctx.moveTo(x2, y2)
+        ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6))
+        ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6))
+        ctx.lineTo(x2, y2)
+        ctx.fill()
+        ctx.restore()
+      },
+      // 画从目标到最后一段的垂线（虚线）；如垂足不在段内，仅将线段有限延长至垂点
+      drawPerpendicularAuxLine() {
+        if (!this.targetRawPosition || this.rawTrajectoryPoints.length < 2) return
+        // 使用“全量连续展开”的最后两点，允许 RA 超出常规范围，保证几何连续
+        const pair = this.getWorldABForPerp(); if (!pair) return
+        const { A, B } = pair
+        const O = { x: 0, y: 0 }
+        const projection = projectOriginOntoLine(A, B)
+        if (!projection) return
+        const Hx = projection.foot.x
+        const Hy = projection.foot.y
+        const segment = projection.extension
+        // 画垂线（O->H）与（可能的延长）线段，均使用虚线
+        const canvas = this.$refs.trajectoryCanvas
+        if (!canvas) return
+        const ctx = canvas.getContext('2d')
+        const Opx = this.screenForWorld(O.x, O.y)
+        const Hpx = this.screenForWorld(Hx, Hy)
+        // const S1 = this.screenForWorld(segment.x1, segment.y1)
+        // const S2 = this.screenForWorld(segment.x2, segment.y2)
+        ctx.save()
+        ctx.setLineDash([6, 6])
+        ctx.lineWidth = 1.5
+        ctx.strokeStyle = '#9E9E9E'
+        // 垂线 O-H
+        ctx.beginPath()
+        ctx.moveTo(Opx.x, Opx.y)
+        ctx.lineTo(Hpx.x, Hpx.y)
+        ctx.stroke()
+        // 在辅助线（虚线）上用箭头标明方向：从 H 指向 O（指向目标）
+        // 选择线段内一点作为箭头位置，避免与目标环重叠
+        const tArrow = 0.6
+        const ax = Hpx.x + (Opx.x - Hpx.x) * tArrow
+        const ay = Hpx.y + (Opx.y - Hpx.y) * tArrow
+        const ang = Math.atan2(Opx.y - Hpx.y, Opx.x - Hpx.x)
+        const head = 8
+        ctx.setLineDash([])
+        ctx.fillStyle = '#9E9E9E'
+        ctx.beginPath()
+        ctx.moveTo(ax, ay)
+        ctx.lineTo(ax - head * Math.cos(ang - Math.PI / 6), ay - head * Math.sin(ang - Math.PI / 6))
+        ctx.lineTo(ax - head * Math.cos(ang + Math.PI / 6), ay - head * Math.sin(ang + Math.PI / 6))
+        ctx.closePath()
+        ctx.fill()
+        // 恢复虚线样式，用于绘制延长段
+        ctx.setLineDash([6, 6])
+        // 仅当垂足不在段上时绘制“延长到垂点”的那段
+        if (segment) {
+          const S1 = this.screenForWorld(segment.x1, segment.y1)
+          const S2 = this.screenForWorld(segment.x2, segment.y2)
+          ctx.beginPath()
+          ctx.moveTo(S1.x, S1.y)
+          ctx.lineTo(S2.x, S2.y)
+          ctx.stroke()
+          // 在延长段上也标注一个朝向“垂足 H”的小箭头
+          const exStart = (t < 0) ? { x: A.x, y: A.y } : { x: B.x, y: B.y }
+          const exEnd = { x: Hx, y: Hy }
+          const ES = this.screenForWorld(exStart.x, exStart.y)
+          const EE = this.screenForWorld(exEnd.x, exEnd.y)
+          const exdx = EE.x - ES.x
+          const exdy = EE.y - ES.y
+          const exLen2 = exdx * exdx + exdy * exdy
+          if (exLen2 > 1) {
+            const tEx = 0.5
+            const eax = ES.x + exdx * tEx
+            const eay = ES.y + exdy * tEx
+            const eang = Math.atan2(exdy, exdx)
+            ctx.setLineDash([])
+            ctx.beginPath()
+            ctx.moveTo(eax, eay)
+            ctx.lineTo(eax - head * Math.cos(eang - Math.PI / 6), eay - head * Math.sin(eang - Math.PI / 6))
+            ctx.lineTo(eax - head * Math.cos(eang + Math.PI / 6), eay - head * Math.sin(eang + Math.PI / 6))
+            ctx.closePath()
+            ctx.fill()
+          }
+        }
+        ctx.restore()
+      },
+      computeAutoFitScale() {
+        const canvas = this.$refs.trajectoryCanvas
+        if (!canvas || !this.targetRawPosition) return 40
+        const cx = this.targetRawPosition.ra
+        const cy = this.targetRawPosition.dec
+        let maxDx = 0, maxDy = 0
+        // 历史点
+        for (let i = 0; i < this.rawTrajectoryPoints.length; i++) {
+          const p = this.rawTrajectoryPoints[i]
+          maxDx = Math.max(maxDx, Math.abs(this.normalizeRaDelta(p.ra - cx)))
+          maxDy = Math.max(maxDy, Math.abs(p.dec - cy))
+        }
+        // 目标环半径（确保环不会顶边）
+        const ringDeg = this.getTargetRingDeg()
+        maxDx = Math.max(maxDx, ringDeg)
+        maxDy = Math.max(maxDy, ringDeg)
+        // 全屏时纳入视场角点以适配视场框；窗口模式不纳入
+        if (this.overlayMode === 'fullscreen') {
+          if (this.fieldData && Number.isFinite(this.fieldData.ra0)) {
+            const corners = [
+              { ra: this.fieldData.ra0, dec: this.fieldData.dec0 },
+              { ra: this.fieldData.ra1, dec: this.fieldData.dec1 },
+              { ra: this.fieldData.ra2, dec: this.fieldData.dec2 },
+              { ra: this.fieldData.ra3, dec: this.fieldData.dec3 },
+            ]
+            for (const c of corners) {
+              maxDx = Math.max(maxDx, Math.abs(this.normalizeRaDelta(c.ra - cx)))
+              maxDy = Math.max(maxDy, Math.abs(c.dec - cy))
+            }
+          }
+        }
+        if (maxDx === 0 && maxDy === 0) return 40
+        const w = this.overlayMode === 'windowed' ? this.baseCanvasLogicalSize.width : canvas.clientWidth
+        const h = this.overlayMode === 'windowed' ? this.baseCanvasLogicalSize.height : canvas.clientHeight
+        // 固定像素内边距，考虑箭头长度（8px）与点半径（4px）
+        const arrowHead = 8, pointR = 4
+        const pixelPadding = 32 + arrowHead + pointR
+        const halfW = Math.max(60, (w / 2) - pixelPadding)
+        const halfH = Math.max(50, (h / 2) - pixelPadding)
+        // 让最远点落在中心到边界距离的 80% 处（留足可视余量）
+        const margin = 0.8
+        // 取消最小 scale 限制，让 autoFit 仅由内容决定
+        let scale = Math.min((halfW * margin) / (maxDx || 1e-6), (halfH * margin) / (maxDy || 1e-6))
+        // 二次校验：按该比例转换一次，确保确实未越界，如越界再缩小比例
+        const pad = pixelPadding
+        const cxPx = w / 2, cyPx = h / 2
+        let maxAbsPxX = 0, maxAbsPxY = 0
+        const collect = []
+        for (let i = 0; i < this.rawTrajectoryPoints.length; i++) collect.push(this.rawTrajectoryPoints[i])
+        if (this.overlayMode === 'fullscreen' && this.fieldData && Number.isFinite(this.fieldData.ra0)) {
+          collect.push({ ra: this.fieldData.ra0, dec: this.fieldData.dec0 })
+          collect.push({ ra: this.fieldData.ra1, dec: this.fieldData.dec1 })
+          collect.push({ ra: this.fieldData.ra2, dec: this.fieldData.dec2 })
+          collect.push({ ra: this.fieldData.ra3, dec: this.fieldData.dec3 })
+        }
+        for (const p of collect) {
+          const dxDeg = this.normalizeRaDelta(p.ra - cx)
+          const dyDeg = (p.dec - cy)
+          maxAbsPxX = Math.max(maxAbsPxX, Math.abs(dxDeg * scale))
+          maxAbsPxY = Math.max(maxAbsPxY, Math.abs(dyDeg * scale))
+        }
+        const allowedX = halfW - pad
+        const allowedY = halfH - pad
+        const adj = Math.min(1, allowedX / (maxAbsPxX || 1e-6), allowedY / (maxAbsPxY || 1e-6))
+        scale *= adj
+        return scale
+      },
+      redrawTrajectory() {
+        if (!this.showTrajectoryOverlay || !this.targetRawPosition) return
+        this.initTrajectoryCanvas()
+        const canvas = this.$refs.trajectoryCanvas
+        if (!canvas) return
+        const ctx = canvas.getContext('2d')
+        // 预先将所有点转换到世界坐标，并初始化映射
+        const rawAll = this.rawTrajectoryPoints
+        // 使用全量点序列初始化/扩展视图映射，确保跨 0/360 时展开方向一致
+        const ensureRaw = rawAll
+        const worldSeq = this.makeWorldSeq(ensureRaw)
+        // 当存在视场数据时，也将视场四角纳入初始映射，防止目标附近尺度过小导致视场绘制异常
+        let fovWorld = []
+        if (this.fieldData) {
+          const timeRef = rawAll.length ? new Date(rawAll[rawAll.length - 1].t || Date.now()) : new Date()
+          const corners = [
+            { ra: this.fieldData.ra0, dec: this.fieldData.dec0 },
+            { ra: this.fieldData.ra1, dec: this.fieldData.dec1 },
+            { ra: this.fieldData.ra2, dec: this.fieldData.dec2 },
+            { ra: this.fieldData.ra3, dec: this.fieldData.dec3 },
+          ]
+          fovWorld = corners.map(c => this.worldForPoint(c.ra, c.dec, timeRef))
+        }
+        // 为了让目标外圈始终完整显示，把当前外圈半径也纳入世界边界估算
+        const ringWorld = []
+        let outerDegForView = Number(this.outerRingDeg)
+        if (!Number.isFinite(outerDegForView) || outerDegForView <= 0) {
+          outerDegForView = this.getTargetRingDeg()
+        }
+        if (Number.isFinite(outerDegForView) && outerDegForView > 0) {
+          ringWorld.push({ x: outerDegForView, y: 0 })
+          ringWorld.push({ x: -outerDegForView, y: 0 })
+          ringWorld.push({ x: 0, y: outerDegForView })
+          ringWorld.push({ x: 0, y: -outerDegForView })
+        }
+        // 仅使用轨迹点 + 目标外圈来决定初始比例尺，避免 FoV 过大时把视图拉得太远
+        this.ensureViewMappingInitialized(worldSeq.concat(ringWorld))
+        // 选择绘制的数据集：全屏=全部；窗口=最新三个，但保持展开锚点稳定
+        const raw = this.overlayMode === 'windowed' ? rawAll.slice(-3) : rawAll
+        const world = this.makeWorldSeq(raw)
+        // 先走一遍更新比例/边界，不绘制，确保下游图元坐标系一致
+        for (let i = 0; i < world.length; i++) this.maybeExpandViewForPoint(world[i].x, world[i].y)
+        // 再绘背景/目标环
+        this.drawTargetMarker()
+        // 绘制轨迹
+        this.trajectoryPoints = []
+        let prevPt = null
+        for (let i = 0; i < world.length; i++) {
+          const spt = this.screenForWorld(world[i].x, world[i].y)
+          const px = spt.x
+          const py = spt.y
+          const isLast = i === raw.length - 1
+          if (!isLast) {
+            this.drawPoint(px, py, '#FFD54F')
+            if (prevPt) this.drawArrow(prevPt.x, prevPt.y, px, py, '#FFD54F')
+          } else {
+            // 当前位置：固定像素大小的蓝色空心圆圈（与比例尺无关）
+            const rPx = 6
+            this.drawHollowCircle(px, py, rPx, '#00BFFF', 2)
+            // 完成判定仍然按角距离（默认 1 角分）来算，与显示半径解耦
+            const tolArcmin = (this.calibrationCircleArcmin || 1)
+            const tolDeg = tolArcmin / 60.0
+            const rDeg = Math.hypot(world[i].x, world[i].y)
+            if (rDeg <= tolDeg) {
+              if (!this.isPolarAligned) {
+                this.isPolarAligned = true
+                this.addLog(this.$t('Polar Alignment Completed'), 'success')
+              }
+            }
+            if (prevPt) this.drawArrow(prevPt.x, prevPt.y, px, py, '#FFD54F')
+          }
+          prevPt = { x: px, y: py }
+          this.trajectoryPoints.push({ x: px, y: py })
+        }
+      },
+      drawHollowCircle(x, y, r = 8, color = '#FFFFFF', lineWidth = 2) {
+        const canvas = this.$refs.trajectoryCanvas
+        if (!canvas) return
+        const ctx = canvas.getContext('2d')
+        ctx.save()
+        ctx.strokeStyle = color
+        ctx.lineWidth = lineWidth
+        ctx.beginPath()
+        ctx.arc(x, y, r, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+      },
+      // FoV 绘制已不再需要
+
+      resetCalibration() {
+        // 使用统一的内存清理方法
+        this.clearCachedData()
+
+        this.addLog(this.$t('Calibration Data Reset'), 'info')
+        // this.$bus.$emit('AppSendMessage', 'Vue_Command', 'ResetAutoPolarAlignment')
+        this.$bus.$emit('ClearCalibrationPoints')
+        this.$bus.$emit('ClearStatusTextFromStarMap')
+        // 清空轨迹
+        this.rawTrajectoryPoints = []
+        this.trajectoryPoints = []
+        this.lastRawPosition = null
+        this.targetRawPosition = null
+      },
+
+      restoreCalibration() {
+        this.addLog(this.$t('Calibration Data Restored'), 'success')
+        this.$bus.$emit('AppSendMessage', 'Vue_Command', 'RestoreAutoPolarAlignment')
+      },
+
+      // ========================================
+      // 校准控制方法
+      // ========================================
+      togglePoleMasterView() {
+        if (this.isCalibrationRunning) return
+        if (this.selectedPolarCameraRole === 'PoleCamera') {
+          this.selectedPolarCameraRole = 'MainCamera'
+          this.activePolarCameraRole = 'MainCamera'
+          this.setPoleMasterPanelVisible(false)
+          return
+        }
+        this.selectedPolarCameraRole = 'PoleCamera'
+        this.activePolarCameraRole = 'PoleCamera'
+      },
+
+      setPoleMasterPanelVisible(visible) {
+        this.isPoleMasterPanelVisible = !!visible
+        this.$bus.$emit('PoleMasterPanelVisible', this.showPoleMasterPanel)
+        if (visible) {
+          this.$nextTick(this.constrainPanelToViewport)
+        }
+      },
+
+      togglePoleMasterPanel() {
+        if (this.showPoleMasterPanel) {
+          this.setPoleMasterPanelVisible(false)
+          return
+        }
+        this.selectedPolarCameraRole = 'PoleCamera'
+        this.activePolarCameraRole = 'PoleCamera'
+        this.setPoleMasterPanelVisible(true)
+      },
+
+      togglePoleMasterPanelFromControl() {
+        if (!this.visible) this.showInterface()
+        if (this.showPoleMasterPanel) {
+          this.setPoleMasterPanelVisible(false)
+          return
+        }
+        this.selectedPolarCameraRole = 'PoleCamera'
+        this.activePolarCameraRole = 'PoleCamera'
+        this.setPoleMasterPanelVisible(true)
+      },
+
+      async startAutoCalibration(preferredRole = null) {
+        if (this.isPoleMasterSimulationRunning) {
+          this.stopAutoCalibration()
+          return
+        }
+        if (!this.isConnected) {
+          this.addLog(this.$t('Error: Mount Not Connected'), 'error')
+          return
+        }
+        const connectedRoles = this.getConnectedPolarRoles()
+        if (!connectedRoles.length) {
+          this.addLog('自动极轴启动失败：主相机、导星镜或电子极轴镜未连接', 'error')
+          this.callShowMessageBox('请先连接主相机、导星镜或电子极轴镜', 'warning')
+          return
+        }
+
+        const mountCheck = this.$canUseDevice('Mount', 'AutoPolarAlignment')
+        if (!mountCheck.allowed) return
+        if (this.isCalibrationRunning) {
+          this.stopAutoCalibration()
+          return
+        }
+
+        let role = preferredRole && connectedRoles.includes(preferredRole)
+          ? preferredRole
+          : (connectedRoles.includes(this.selectedPolarCameraRole)
+              ? this.selectedPolarCameraRole
+              : (connectedRoles.includes('MainCamera') ? 'MainCamera' : connectedRoles[0]))
+        if (!preferredRole && connectedRoles.length > 1) {
+          role = await this.requestCameraRoleSelection(connectedRoles, role)
+        }
+
+        const cameraDevice = this.polarRoleDevice(role)
+        const cameraCheck = this.$canUseDevice(cameraDevice, 'AutoPolarAlignment')
+        if (!cameraCheck.allowed) return
+        if (!this.hasConnectedDevice(cameraDevice)) {
+          this.callShowMessageBox(`${this.polarRoleLabel(role)}未连接，无法使用该设备执行自动极轴`, 'warning')
+          return
+        }
+
+        const needPrereqDialog = (() => {
+          const { lat, lon } = this.getCurrentCoordinates()
+          const mainFocal = String(this.configMainFocalLengthRaw || '').trim()
+          const guiderFocal = String(this.configGuiderFocalLengthRaw || '').trim()
+          const poleFocal = String(this.configPoleFocalLengthRaw || '').trim()
+          const locationOk = this.validateCoordinates(lat, lon)
+          const focalOk = this.validateRoleFocalLength(role, mainFocal, guiderFocal, poleFocal)
+          return !(locationOk && focalOk)
+        })()
+        if (needPrereqDialog) {
+          const confirmed = await this.openPrereqDialog(role)
+          if (!confirmed) return
+        }
+
+        this.selectedPolarCameraRole = role
+        this.activePolarCameraRole = role
+        if (role === 'PoleCamera') {
+          this.isPoleMasterCalibrationActive = true
+          this.poleMasterState = 1
+          this.poleMasterMessage = '电子极轴镜校准启动中'
+          this.poleMasterProgress = 0
+          this.poleMasterGuide = {
+            imageW: 0,
+            imageH: 0,
+            axisX: null,
+            axisY: null,
+            poleX: null,
+            poleY: null,
+            errorPx: null,
+            errorArcsec: null,
+            hint: ''
+          }
+          this.poleMasterFrame = null
+          this.poleMasterOverlay = null
+          this.poleMasterCurrentFrameId = ''
+          this.resetPoleMasterPendingPayload()
+        } else {
+          this.isPoleMasterCalibrationActive = false
+          this.poleMasterState = 0
+        }
+        // 重置进度条状态
+        this.guidanceStep = null
+        this.guidanceStepMessage = ''
+        this.guidanceStarCount = -1
+        this.guidanceStepStatus = 'normal'
+        if (this.guidanceStatusTimeout) {
+          clearTimeout(this.guidanceStatusTimeout)
+          this.guidanceStatusTimeout = null
+        }
+        
+        this.isCalibrationRunning = true
+        const featureDevices = this.polarFeatureDevices(role)
+        this.$startFeature(featureDevices, 'AutoPolarAlignment')
+        this.resetCalibration()
+        this.addLog(this.$t('Starting Auto Calibration'), 'info')
+        this.$bus.$emit('AppSendMessage', 'Vue_Command', `StartAutoPolarAlignment:${role}`)
+      },
+
+      startPoleMasterSimulation() {
+        if (this.isPoleMasterSimulationRunning) {
+          this.stopAutoCalibration()
+          return
+        }
+        if (this.isCalibrationRunning) return
+
+        this.selectedPolarCameraRole = 'PoleCamera'
+        this.activePolarCameraRole = 'PoleCamera'
+        this.isPoleMasterCalibrationActive = true
+        this.isPoleMasterSimulationRunning = true
+        this.isCalibrationRunning = true
+        this.poleMasterState = 1
+        this.poleMasterMessage = '电子极轴镜模拟校准启动中'
+        this.poleMasterProgress = 0
+        this.poleMasterGuide = {
+          imageW: 0,
+          imageH: 0,
+          axisX: null,
+          axisY: null,
+          poleX: null,
+          poleY: null,
+          errorPx: null,
+          errorArcsec: null,
+          hint: ''
+        }
+        this.poleMasterFrame = null
+        this.poleMasterOverlay = null
+        this.poleMasterCurrentFrameId = ''
+        this.resetPoleMasterPendingPayload()
+        this.resetCalibration()
+        this.addLog('启动电子极轴镜模拟测试', 'info')
+        this.$bus.$emit('AppSendMessage', 'Vue_Command', 'StartPoleMasterAlignmentSimulation')
+      },
+
+      stopAutoCalibration() {
+        this.isCalibrationRunning = false
+        this.isPoleMasterCalibrationActive = false
+        this.isPoleMasterSimulationRunning = false
+        this.poleMasterCurrentFrameId = ''
+        this.resetPoleMasterPendingPayload()
+        this.addLog(this.$t('Auto Calibration Stopped'), 'warning')
+        const featureDevices = this.polarFeatureDevices(this.activePolarCameraRole)
+        this.$stopFeature(featureDevices, 'AutoPolarAlignment')
+        this.$bus.$emit('AppSendMessage', 'Vue_Command', 'StopAutoPolarAlignment')
+      },
+      // ========================================
+      // 视场数据处理方法
+      // ========================================
+      updateFieldData(data) {
+        if (data && Array.isArray(data) && data.length >= 12) { // 修改长度检查，确保包含假极轴数据
+          const isValidData = data.every(val => typeof val === 'number' && !isNaN(val))
+          if (!isValidData) {
+            this.addLog(this.$t('Warning: Invalid Field Data Received'), 'warning')
+            return
+          }
+
+          this.fieldData = {
+            ra: data[0],
+            dec: data[1],
+            ra0: data[2],
+            dec0: data[3],
+            ra1: data[4],
+            dec1: data[5],
+            ra2: data[6],
+            dec2: data[7],
+            ra3: data[8],
+            dec3: data[9],
+            targetra: data[10],
+            targetdec: data[11],
+            fakePolarRA: data[12],
+            fakePolarDEC: data[13],
+            realPolarRA: data[14],
+            realPolarDEC: data[15]
+          }
+
+          // 保存上一次位置（在更新当前位置之前）
+          if (this.currentPosition.ra !== '00h 00m 00s') {
+            this.previousPosition = { ...this.currentPosition }
+          }
+
+          // 更新当前位置
+          this.currentPosition = {
+            ra: this.formatCoordinate(data[0], 'ra'),
+            dec: this.formatCoordinate(data[1], 'dec')
+          }
+
+          // === 轨迹逻辑挂接 ===
+          // 使用原始角度（假设 data[0], data[1], data[10], data[11] 为度单位）
+          const rawRa = data[0]
+          const rawDec = data[1]
+          // 在进入调整阶段（目标提供）时固定目标点；否则不绘制
+          if (data[10] !== -1 && data[11] !== -1) {
+            if (!this.targetRawPosition || (this.targetRawPosition.ra !== data[10] || this.targetRawPosition.dec !== data[11])) {
+              this.targetRawPosition = { ra: data[10], dec: data[11] }
+              // 目标点变化时，重置多级圈到“度级”初始状态
+              this.alignmentScaleStage = 'degree'
+              this.outerRingDeg = 10.0
+              this.innerRingDeg = 1.0
+              this.targetRingColor = '#FFD54F'
+              this.alignmentCurrentDistanceDeg = null
+              // 重置视图映射，后续由轨迹点重新驱动比例尺
+              this.resetViewMapping()
+              // 重绘以目标点为中心
+              if (this.showTrajectoryOverlay) this.redrawTrajectory()
+            }
+            const posChanged = !this.lastRawPosition || this.lastRawPosition.ra !== rawRa || this.lastRawPosition.dec !== rawDec
+            if (posChanged) {
+              const nowMs = Date.now()
+              this.appendRawTrajectoryPoint(rawRa, rawDec, nowMs)
+              // 更新多级精度圈与可能的轨迹清理 / 比例重置
+              this.updateAlignmentRingsAndScale(rawRa, rawDec, nowMs)
+              // 改为全量重绘（确保自适应比例包含所有点、并绘制视场框）
+              if (this.showTrajectoryOverlay) this.redrawTrajectory()
+              this.lastRawPosition = { ra: rawRa, dec: rawDec }
+            }
+          }
+
+          if (data[10] === -1 && data[11] === -1) {
+            // 校准点收集阶段
+            this.calibrationPhase = 'collecting'
+            const pointNumber = this.calibrationPoints.length + 1
+
+            // 添加调试信息
+            this.addLog(`准备收集校准点${pointNumber}，当前已有${this.calibrationPoints.length}个点`, 'info')
+
+            try {
+              this.drawCalibrationPointPolygon(data[0], data[1], pointNumber, this.fieldData)
+              this.addLog(this.$t('Calibration Point', [pointNumber, data[0].toFixed(4), data[1].toFixed(4)]), 'info')
+
+              // 保存校准点 - 限制最大数量
+              if (this.calibrationPoints.length < this.maxCalibrationPoints) {
+                this.calibrationPoints.push({
+                  ra: data[0],
+                  dec: data[1],
+                  index: pointNumber
+                })
+              } else {
+                // 如果超过最大数量，替换最旧的点
+                const oldestIndex = (pointNumber - 1) % this.maxCalibrationPoints
+                this.calibrationPoints[oldestIndex] = {
+                  ra: data[0],
+                  dec: data[1],
+                  index: pointNumber
+                }
+              }
+
+              this.addLog(`校准点${pointNumber}已添加，现在总共有${this.calibrationPoints.length}个点`, 'info')
+
+              // 如果收集了3个点，进入调整阶段
+              if (this.calibrationPoints.length === this.maxCalibrationPoints) {
+                this.calibrationPhase = 'adjusting'
+                this.addLog(this.$t('Three calibration points collected, entering adjustment phase'), 'success')
+              }
+            } catch (error) {
+              this.addLog(this.$t('Error processing calibration point', [error.message]), 'error')
+              console.error('处理校准点错误：', error)
+            }
+          } else if (data[10] !== -1 && data[11] !== -1) {
+            // 调整阶段：显示目标位置和假极轴
+            this.calibrationPhase = 'adjusting'
+            this.targetPoint = { ra: data[10], dec: data[11] }
+
+            try {
+              // 先清除所有之前的元素
+              this.addLog('调整模式：准备清除之前的校准元素', 'info')
+              this.$bus.$emit('ClearCalibrationPoints')
+              this.addLog('调整模式：清除命令已发送', 'info')
+
+              // 绘制校准点（如果已收集3个点）
+              if (this.calibrationPoints.length === this.maxCalibrationPoints) {
+                this.calibrationPoints.forEach((point, index) => {
+                  const pointCoordinates = this.calculateFieldCorners(point.ra, point.dec, this.fieldData, false)
+                  const pointColor = {
+                    stroke: "#FFD700",        // 金色边框：校准点
+                    strokeOpacity: 1,         // 边框不透明度
+                    fill: "#FFD700",          // 金色填充：校准点
+                    fillOpacity: 0.3          // 填充不透明度（半透明）
+                  }
+
+                  this.$bus.$emit('DrawCalibrationPointPolygon', pointCoordinates, pointColor,
+                    `Calibration_Point_${index + 1}`)
+                })
+              }
+
+              // 绘制当前位置（蓝色）
+              const currentCoordinates = this.calculateFieldCorners(data[0], data[1], this.fieldData, false)
+              const currentColor = {
+                stroke: "#00BFFF",        // 蓝色边框：当前位置
+                strokeOpacity: 1,         // 边框不透明度
+                fill: "#00BFFF",          // 蓝色填充：当前位置
+                fillOpacity: 0.3          // 填充不透明度（半透明）
+              }
+
+              this.$bus.$emit('DrawCalibrationPointPolygon', currentCoordinates, currentColor,
+                'Current_Position')
+
+              // 绘制目标点（绿色圆形）
+              const targetColor = {
+                stroke: "#4CAF50",        // 绿色边框：目标点
+                strokeOpacity: 1,         // 边框不透明度
+                fill: "#4CAF50",          // 绿色填充：目标点
+                fillOpacity: 0.3          // 填充不透明度（半透明）
+              }
+
+              const { az, alt } = this.equatorialToHorizontal(data[10], data[11], new Date(Date.now()), this.$store.state.currentLocation.lat, this.$store.state.currentLocation.lng)
+              // console.log('当前位置目标点', data[6], data[7] + ' 转化为地平坐标为' + az + ' ' + alt);
+              // console.log('使用时间和地点', new Date(Date.now()), $store.state.currentLocation.lat, $store.state.currentLocation.lng);
+
+              this.$bus.$emit('DrawTargetPointCircle',
+                az,
+                alt,
+                targetColor,
+                'Target_Point',
+                '目标点'
+              )
+
+              // 绘制假极轴（紫色圆形）
+              if (data[12] !== -1 && data[13] !== -1 && !isNaN(data[12]) && !isNaN(data[13])) {
+                const { az, alt } = this.equatorialToHorizontal(data[12], data[13], new Date(Date.now()), this.$store.state.currentLocation.lat, this.$store.state.currentLocation.lng)
+                this.drawFakePolarAxis(az, alt)
+              }
+
+              this.addLog(`调整模式：当前位置(${data[0].toFixed(4)}, ${data[1].toFixed(4)}) 目标位置(${data[6].toFixed(4)}, ${data[7].toFixed(4)}) 假极轴(${data[8].toFixed(4)}, ${data[9].toFixed(4)})`, 'info')
+            } catch (error) {
+              this.addLog(this.$t('Error processing adjustment data', [error.message]), 'error')
+              console.error('处理调整数据错误：', error)
+            }
+          }
+        } else {
+          this.addLog(this.$t('Error: Invalid Field Data Format'), 'error')
+        }
+      },
+
+      // 绘制校准点
+      drawCalibrationPointPolygon(ra, dec, pointNumber, fieldData) {
+        this.addLog(this.$t('Drawing Calibration Point', [pointNumber, ra, dec]), 'info')
+
+        try {
+          const coordinates = this.calculateFieldCorners(ra, dec, fieldData)
+          this.addLog(this.$t('Calculated Field Corner Coordinates', [JSON.stringify(coordinates)]), 'info')
+
+          // 验证坐标有效性
+          const validCoordinates = coordinates.every((coord, index) => {
+            const isValid = coord && typeof coord.ra === 'number' && typeof coord.dec === 'number' &&
+              !isNaN(coord.ra) && !isNaN(coord.dec) && isFinite(coord.ra) && isFinite(coord.dec)
+            if (!isValid) {
+              this.addLog(this.$t('Warning: Invalid Coordinate Point', [index, JSON.stringify(coord)]), 'warning')
+            }
+            return isValid
+          })
+
+          if (!validCoordinates) {
+            this.addLog(this.$t('Invalid Field Coordinates'), 'error')
+            return
+          }
+
+          const color = this.getCalibrationPointColor()
+
+          // 添加文本标签
+          const label = `校准点${pointNumber}`
+          const labelColor = "#FFFFFF"
+
+          this.addLog(this.$t('Sending Draw Calibration Event', [pointNumber]), 'info')
+          this.$bus.$emit('DrawCalibrationPointPolygon', coordinates, color, `Calibration_${pointNumber}`)
+
+        } catch (error) {
+          this.addLog(this.$t('Error Drawing Calibration Point', [error.message]), 'error')
+          console.error('绘制校准点错误：', error)
+        }
+      },
+
+      // 清除所有校准点
+      clearCalibrationPoints() {
+        this.addLog(this.$t('Clearing All Calibration Points'), 'info')
+        this.$bus.$emit('ClearCalibrationPoints')
+        this.$bus.$emit('ClearStatusTextFromStarMap')
+      },
+
+      /**
+       * 绘制极轴校准调整点
+       * 在星图上绘制当前位置、目标位置、校准点等关键位置标记
+       * @param {number} currentRa - 当前赤经位置
+       * @param {number} currentDec - 当前赤纬位置  
+       * @param {number} targetRa - 目标赤经位置
+       * @param {number} targetDec - 目标赤纬位置
+       * @param {object} fieldData - 视场数据（包含视场边界信息）
+       * @param {boolean} isTimerUpdate - 是否为定时器更新（用于区分手动更新和自动更新）
+       */
+      drawAdjustmentPoints(currentRa, currentDec, targetRa, targetDec, fieldData, isTimerUpdate = false) {
+        // 这个方法现在主要用于校准点收集阶段
+        // 调整阶段的绘制逻辑已经移到updateFieldData方法中
+
+        this.addLog(this.$t('Starting Draw Adjustment Points', [currentRa, currentDec, targetRa, targetDec]), 'info')
+
+        try {
+          // 只在校准点收集阶段使用这个方法
+          if (this.calibrationPhase === 'collecting') {
+            // 绘制校准点收集阶段的逻辑
+            const currentCoordinates = this.calculateFieldCorners(currentRa, currentDec, fieldData, false)
+            const currentColor = {
+              stroke: "#00BFFF",        // 蓝色边框：当前位置
+              strokeOpacity: 1,         // 边框不透明度
+              fill: "#00BFFF",          // 蓝色填充：当前位置
+              fillOpacity: 0.3          // 填充不透明度（半透明）
+            }
+
+            this.$bus.$emit('DrawCalibrationPointPolygon', currentCoordinates, currentColor,
+              'Current_Position')
+          }
+
+        } catch (error) {
+          this.addLog(this.$t('Error Drawing Adjustment Points', [error.message]), 'error')
+          console.error('绘制调整点错误：', error)
+        }
+      },
+
+      /**
+       * 计算视场的五个角点坐标
+       * @param {number} centerRa - 视场中心的赤经坐标
+       * @param {number} centerDec - 视场中心的赤纬坐标
+       * @param {object} fieldData - 视场数据（包含视场边界信息）
+       * @param {boolean} useDefaultSize - 是否使用默认视场大小（用于目标点等固定位置）
+       * @returns {Array} 包含5个角点坐标的数组，用于绘制多边形
+       */
+      calculateFieldCorners(centerRa, centerDec, fieldData, useDefaultSize = false) {
+        this.addLog(this.$t('Calculating Field Corners', [centerRa, centerDec]), 'info')
+
+        // 如果指定使用默认大小或者没有视场数据，使用默认的0.5度视场大小
+        if (useDefaultSize || !fieldData) {
+          this.addLog(this.$t('Using Default Field Size: 0.5 Degrees'), 'info')
+          const fieldSize = 0.5
+          const coordinates = [
+            { ra: centerRa + fieldSize / 2, dec: centerDec + fieldSize / 2 },
+            { ra: centerRa - fieldSize / 2, dec: centerDec + fieldSize / 2 },
+            { ra: centerRa - fieldSize / 2, dec: centerDec - fieldSize / 2 },
+            { ra: centerRa + fieldSize / 2, dec: centerDec - fieldSize / 2 },
+            { ra: centerRa + fieldSize / 2, dec: centerDec + fieldSize / 2 }
+          ]
+          this.addLog(this.$t('Default Field Corners', [JSON.stringify(coordinates)]), 'info')
+          return coordinates
+        }
+
+        // 如果有视场数据且不强制使用默认大小，基于传入的中心点坐标计算视场角点
+        // 这种情况主要用于当前位置的显示，需要反映实际的视场大小
+        const { ra0, dec0, ra1, dec1, ra2, dec2, ra3, dec3 } = fieldData
+
+        // 计算视场的实际大小（RA和DEC方向的跨度）
+   
+
+        // 基于传入的中心点坐标，计算视场的五个角点
+        const coordinates = [
+          { ra: ra0, dec: dec0 },     // 右上角
+          { ra: ra1, dec: dec1 },     // 左上角
+          { ra: ra2, dec: dec2 },     // 左下角
+          { ra: ra3, dec: dec3 },     // 右下角
+          { ra: ra0, dec: dec0 }      // 回到右上角（闭合多边形）
+        ]
+
+        this.addLog(this.$t('Using Field Data', [ra0, dec0, ra1, dec1, ra2, dec2, ra3, dec3]), 'info')
+        this.addLog(this.$t('Field Corner Calculation Result', [JSON.stringify(coordinates)]), 'info')
+        return coordinates
+      },
+
+
+
+      // ========================================
+      // 格式化方法
+      // ========================================
+      formatTime(timestamp) {
+        if (!timestamp) return ''
+        const date = new Date(timestamp)
+        return date.toLocaleTimeString('zh-CN', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        })
+      },
+
+      formatAdjustmentValue(value) {
+        if (!Number.isFinite(value)) return `0.0${this.unitGlyph(this.adjustmentUnit)}`
+        // value 的单位 = props.adjustmentUnit
+        const valArcmin = this.unitToArcmin(value, this.adjustmentUnit)
+        // 展示单位仍然用 props.adjustmentUnit（也可改成固定'arcmin'）
+        return this.formatWithUnit(valArcmin, this.adjustmentUnit, 1)
+      },
+
+      // 格式化坐标显示
+      formatCoordinate(value, type) {
+        if (value === null || value === undefined || isNaN(value)) {
+          return type === 'ra' ? '00h 00m 00s' : '+00° 00\' 00"'
+        }
+
+        if (type === 'ra') {
+          // 格式化RA为时分秒格式
+          const hours = Math.floor(value / 15)
+          const minutes = Math.floor((value % 15) * 4)
+          const seconds = Math.floor(((value % 15) * 4 - minutes) * 60)
+          return `${hours.toString().padStart(2, '0')}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`
+        } else {
+          // 格式化DEC为度分秒格式
+          const sign = value >= 0 ? '+' : '-'
+          const absValue = Math.abs(value)
+          const degrees = Math.floor(absValue)
+          const minutes = Math.floor((absValue - degrees) * 60)
+          const seconds = Math.floor(((absValue - degrees) * 60 - minutes) * 60)
+          return `${sign}${degrees.toString().padStart(2, '0')}° ${minutes.toString().padStart(2, '0')}' ${seconds.toString().padStart(2, '0')}"`
+        }
+      },
+
+
+      // ========================================
+      // 辅助方法
+      // ========================================
+      parseCoordinate(value, type) {
+        if (typeof value === 'string') {
+          if (type === 'ra') {
+            // 解析时分秒格式 "00h 00m 00s"
+            const match = value.match(/(\d+)h\s*(\d+)m\s*(\d+)s/)
+            if (match) {
+              const hours = parseInt(match[1])
+              const minutes = parseInt(match[2])
+              const seconds = parseInt(match[3])
+              return hours + minutes / 60 + seconds / 3600
+            }
+          } else {
+            // 解析度分秒格式 "+00° 00' 00""
+            const match = value.match(/([+-]?)(\d+)°\s*(\d+)'\s*(\d+)"/)
+            if (match) {
+              const sign = match[1] === '-' ? -1 : 1
+              const degrees = parseInt(match[2])
+              const minutes = parseInt(match[3])
+              const seconds = parseInt(match[4])
+              return sign * (degrees + minutes / 60 + seconds / 3600)
+            }
+          }
+        }
+        return null
+      },
+
+      addStatusTextToStarMap() {
+        // 添加状态文本到星图
+        const statusText = {
+          text: `极轴校准调整中 - 校准点: ${this.calibrationPoints.length}/3`,
+          position: { ra: this.currentPosition.ra, dec: this.currentPosition.dec },
+          color: "#FFFFFF",
+          fontSize: 14,
+          backgroundColor: "rgba(0, 0, 0, 0.7)"
+        }
+
+        // 发送状态文本到星图
+        // this.$bus.$emit('AddStatusTextToStarMap', statusText)
+      },
+
+      getStepClass(index) {
+        // 根据进度百分比确定节点状态
+        const progress = this.progressPercentage
+
+        switch (index) {
+          case 0: // 初始化节点
+            if (progress >= PROGRESS_THRESHOLDS.INITIALIZATION) return { completed: true }
+            if (progress >= 0) return { current: true }
+            return {}
+
+          case 1: // 第一次校准节点
+            if (progress >= PROGRESS_THRESHOLDS.FIRST_CALIBRATION) return { completed: true }
+            if (progress >= PROGRESS_THRESHOLDS.INITIALIZATION) return { current: true }
+            return {}
+
+          case 2: // 第二次校准节点
+            if (progress >= PROGRESS_THRESHOLDS.SECOND_CALIBRATION) return { completed: true }
+            if (progress >= PROGRESS_THRESHOLDS.FIRST_CALIBRATION) return { current: true }
+            return {}
+
+          case 3: // 第三次校准节点
+            if (progress >= PROGRESS_THRESHOLDS.THIRD_CALIBRATION) return { completed: true }
+            if (progress >= PROGRESS_THRESHOLDS.SECOND_CALIBRATION) return { current: true }
+            return {}
+
+          default:
+            return {}
+        }
+      },
+
+      getAzimuthAction(azVal) {
+        if (!Number.isFinite(azVal)) return ''
+        const arcmin = this.unitToArcmin(azVal, this.adjustmentUnit)
+        if (Math.abs(arcmin) <= this.deadbandArcmin) return this.$t('No adjustment needed')
+        const dir = this.azLabelBySign(arcmin)
+        // 输出单位与 props.adjustmentUnit 保持一致
+        return `${dir} ${this.formatWithUnit(arcmin, this.adjustmentUnit, 1)}`
+      },
+
+      getAltitudeAction(altVal) {
+        if (!Number.isFinite(altVal)) return ''
+        const arcmin = this.unitToArcmin(altVal, this.adjustmentUnit)
+        if (Math.abs(arcmin) <= this.deadbandArcmin) return this.$t('No adjustment needed')
+        const dir = this.altLabelBySign(arcmin)
+        return `${dir} ${this.formatWithUnit(arcmin, this.adjustmentUnit, 1)}`
+      },
+
+
+
+      // ========================================
+      // 日志方法
+      // ========================================
+      addLog(message, level = 'info') {
+        const log = {
+          id: Date.now() + Math.random(),
+          message,
+          level,
+          timestamp: new Date()
+        }
+        
+        // 生产环境减少console输出
+        if (process.env.NODE_ENV === 'development') {
+          console.log(log.message)
+        }
+        
+        // 使用循环数组优化内存使用
+        if (this.logs.length < this.logCapacity) {
+          this.logs.push(log)
+        } else {
+          // 循环覆盖旧日志
+          this.logs[this.logIndex] = log
+          this.logIndex = (this.logIndex + 1) % this.logCapacity
+        }
+      },
+
+      clearLogs() {
+        this.logs = []
+        this.logIndex = 0
+      },
+
+      // ========================================
+      // 极轴校准状态更新方法
+      // ========================================
+      calculatePolarAxisOffset() {
+        this.polarAxisOffset = {
+          azimuth: this.adjustment.azimuth,
+          altitude: this.adjustment.altitude
+        }
+      },
+
+      updatePolarAlignmentState(stateNumber, logMessage, progress) {
+        if (logMessage && typeof logMessage === 'string') {
+          let level = 'info'
+          if (logMessage.toLowerCase().includes('error') || logMessage.toLowerCase().includes('失败')) {
+            level = 'error'
+          } else if (logMessage.toLowerCase().includes('warning') || logMessage.toLowerCase().includes('警告')) {
+            level = 'warning'
+          } else if (logMessage.toLowerCase().includes('success') || logMessage.toLowerCase().includes('成功') || logMessage.toLowerCase().includes('完成')) {
+            level = 'success'
+          }
+          this.addLog(logMessage, level)
+        }
+
+        if (progress !== undefined && progress !== null) {
+          this.currentProgress = progress
+
+          if (progress >= 0 && progress <= 100) {
+            // 根据进度更新校准状态
+            if (progress >= 0 && progress < 15) {
+              // 初始化阶段
+              this.calibrationPoints = []
+              this.isCalibrationComplete = false
+              this.isPolarAligned = false
+            } else if (progress >= 15 && progress < 25) {
+              // 第一次校准阶段 - 移除模拟数据添加，实际校准点由updateFieldData处理
+              // 这里只更新状态，不添加模拟校准点
+            } else if (progress >= 25 && progress < 50) {
+              // 第二次校准阶段 - 移除模拟数据添加，实际校准点由updateFieldData处理
+              // 这里只更新状态，不添加模拟校准点
+            } else if (progress >= 50 && progress < 75) {
+              // 第三次校准阶段 - 移除模拟数据添加，实际校准点由updateFieldData处理
+              // 这里只更新状态，不添加模拟校准点
+            } else if (progress >= 75 && progress < 95) {
+              // 循环校准调整阶段
+              this.isCalibrationComplete = true
+              this.calculatePolarAxisOffset()
+
+              // 检测校准循环
+              if (progress < this.lastCalibrationProgress && this.lastCalibrationProgress >= 75) {
+                this.calibrationLoopCount++
+                this.addLog(this.$t('Calibration Round Started', [this.calibrationLoopCount]), 'info')
+              }
+
+              // 在循环校准阶段，进度可能会在75-95之间波动
+              // 这表示系统正在进行多次校准调整
+              if (progress > 85) {
+                this.addLog(this.$t('Calibration Progress Info', [Math.round(progress), this.calibrationLoopCount]), 'info')
+              }
+
+              this.lastCalibrationProgress = progress
+            } else if (progress >= 95 && progress <= 100) {
+              // 最终验证阶段
+              this.isCalibrationComplete = true
+              this.calculatePolarAxisOffset()
+
+              if (Math.abs(this.polarAxisOffset.azimuth) < 1.0 && Math.abs(this.polarAxisOffset.altitude) < 1.0) {
+                this.isPolarAligned = true
+                this.addLog(this.$t('Polar Alignment Completed'), 'success')
+              } else {
+                this.addLog(this.$t('Polar Alignment Needs Manual Adjustment'), 'warning')
+              }
+            }
+          }
+        }
+      },
+
+      updatePolarAlignmentIsRunning(isRunning) {
+        this.isCalibrationRunning = isRunning
+        this.hasAcceptUpdateMessage = true
+        if (isRunning) {
+          this.activePolarCameraRole = this.selectedPolarCameraRole || 'MainCamera'
+        }
+        const featureDevices = this.polarFeatureDevices(this.activePolarCameraRole)
+        if (isRunning) this.$startFeature(featureDevices, 'AutoPolarAlignment')
+        else this.$stopFeature(featureDevices, 'AutoPolarAlignment')
+        if (!isRunning) {
+          this.isPoleMasterCalibrationActive = false
+          this.isPoleMasterSimulationRunning = false
+          // 清除状态动画定时器
+          if (this.guidanceStatusTimeout) {
+            clearTimeout(this.guidanceStatusTimeout)
+            this.guidanceStatusTimeout = null
+          }
+          // 校准停止时重置指导调整阶段状态
+          this.guidanceStep = null
+          this.guidanceStepMessage = ''
+          this.guidanceStarCount = -1
+          this.guidanceStepStatus = 'normal'
+        }
+      },
+
+      updateGuidanceStepProgress(step, message, starCount) {
+        // 清除之前的状态动画定时器
+        if (this.guidanceStatusTimeout) {
+          clearTimeout(this.guidanceStatusTimeout)
+          this.guidanceStatusTimeout = null
+        }
+
+        this.guidanceStep = step
+        this.guidanceStepMessage = message
+        this.guidanceStarCount = starCount
+
+        // 根据消息内容判断状态
+        let status = 'normal'
+        if (message) {
+          let level = 'info'
+          if (message.includes('失败') || message.includes('错误') || message.includes('超时') || message.includes('无效')) {
+            level = 'error'
+            status = 'error'
+          } else if (message.includes('警告')) {
+            level = 'warning'
+            status = 'normal'
+          } else if (message.includes('成功') || message.includes('完成') || message.includes('良好')) {
+            level = 'success'
+            status = 'success'
+          }
+          this.addLog(message, level)
+        }
+
+        // 设置状态
+        this.guidanceStepStatus = status
+
+        // 如果是成功或失败状态，显示动画后恢复为normal
+        if (status === 'success' || status === 'error') {
+          this.guidanceStatusTimeout = setTimeout(() => {
+            this.guidanceStepStatus = 'normal'
+            this.guidanceStatusTimeout = null
+          }, 2000) // 2秒后恢复为normal状态
+        }
+      },
+
+      updateGuidanceSolveStats(successCount, totalCount) {
+        const success = Number(successCount)
+        const total = Number(totalCount)
+        if (!Number.isFinite(success) || !Number.isFinite(total)) return
+        this.guidanceSolveStats = {
+          success: Math.max(0, Math.trunc(success)),
+          total: Math.max(0, Math.trunc(total))
+        }
+      },
+
+      getGuidanceStepLabel(step) {
+        const labels = {
+          0: this.$t('Capturing'),
+          1: this.$t('Checking Stars'),
+          2: this.$t('Solving'),
+          3: this.$t('Calculating'),
+          4: this.$t('Sending Guidance'),
+          5: this.$t('Waiting User'),
+          6: this.$t('Completed')
+        }
+        return labels[step] || ''
+      },
+
+      getStepDescription(step, status) {
+        // 根据状态返回简短的描述文字
+        if (status === 'success') {
+          return this.$t('Success') // 成功
+        }
+        if (status === 'error') {
+          return this.$t('Failed') // 失败
+        }
+        if (step === null) {
+          return this.$t('Waiting') // 等待
+        }
+        // 根据步骤返回简短描述
+        const descriptions = {
+          0: this.$t('Capturing'), // 拍摄
+          1: this.$t('Checking'), // 检查
+          2: this.$t('Solving'), // 解析
+          3: this.$t('Calculating'), // 计算
+          4: this.$t('Sending'), // 发送
+          5: this.$t('Waiting'), // 等待
+          6: this.$t('Done') // 完成
+        }
+        return descriptions[step] || this.$t('Processing') // 处理中
+      },
+
+      getStepIcon(step) {
+        if (step === null) {
+          return 'mdi-compass-rose'
+        }
+        const icons = {
+          0: 'mdi-camera',
+          1: 'mdi-star',
+          2: 'mdi-cog',
+          3: 'mdi-calculator',
+          4: 'mdi-send',
+          5: 'mdi-clock-outline',
+          6: 'mdi-check-circle'
+        }
+        return icons[step] || 'mdi-circle'
+      },
+
+      getProgressOffset() {
+        // 如果不在调整阶段，显示空进度
+        if (this.guidanceStep === null || !this.isCalibrationRunning) {
+          return 283 // 完全隐藏进度条
+        }
+        // 根据步骤计算进度条偏移量（0-100%）
+        const stepProgress = {
+          0: 0,    // 拍摄: 0%
+          1: 20,   // 检查星点: 20%
+          2: 40,   // 解析: 40%
+          3: 60,   // 计算: 60%
+          4: 80,   // 发送指导: 80%
+          5: 90,   // 等待用户: 90%
+          6: 100   // 完成: 100%
+        }
+        const progress = stepProgress[this.guidanceStep] || 0
+        // strokeDashoffset = 周长 * (1 - progress/100)
+        return 283 * (1 - progress / 100)
+      },
+
+      // ========================================
+      // 坐标转换方法
+      // ========================================
+      /**
+       * 赤道坐标 (RA, Dec) → 地平坐标 (Az, Alt)
+       * @param {number} raDeg 赤经 (度, 0~360)
+       * @param {number} decDeg 赤纬 (度, -90~+90)
+       * @param {Date} dateUTC 观测时间 (UTC 时间)
+       * @param {number} latDeg 观测点纬度 (度, 北正南负)
+       * @param {number} lonDeg 观测点经度 (度, 东正西负)
+       * @returns {{az: number, alt: number}} 方位角/高度角 (度)
+       */
+      equatorialToHorizontal(raDeg, decDeg, dateUTC, latDeg, lonDeg) {
+        // 工具
+        const toJD = d => (Number(d) / 86400000) + 2440587.5; // Date/ms → JD
+        const d2r = x => x * Math.PI / 180, r2d = x => x * 180 / Math.PI;
+        const norm360 = a => ((a % 360) + 360) % 360;
+        const clamp = (x, lo = -1, hi = 1) => Math.min(hi, Math.max(lo, x));
+
+        // 入参归一化 + 硬校验
+        raDeg = Number(raDeg);
+        decDeg = Number(decDeg);
+        latDeg = Number(latDeg);
+        lonDeg = Number(lonDeg);
+        const tms = Number(dateUTC); // Date 或时间戳都可
+
+        if (process.env.NODE_ENV === 'development') {
+          console.log('EQ→HOR 入参:', { raDeg, decDeg, latDeg, lonDeg, dateUTC, tms });
+        }
+
+        if (![raDeg, decDeg, latDeg, lonDeg, tms].every(Number.isFinite)) {
+          console.error('EQ→HOR 入参非法:', { raDeg, decDeg, latDeg, lonDeg, dateUTC, tms });
+          return { az: NaN, alt: NaN };
+        }
+
+        try {
+          // 1) JD & GMST
+          const JD = toJD(tms);
+          const d = JD - 2451545.0;
+          let GMST = norm360(280.46061837 + 360.98564736629 * d); // 度
+
+          // 2) LST（东经为正）
+          let LST = norm360(GMST + lonDeg);
+
+          // 3) HA（-180~180 更稳）
+          let HA = LST - raDeg;
+          HA = ((HA + 180) % 360) - 180;
+
+          // 4) Alt / Az（稳定形式）
+          const ha = d2r(HA);
+          const dec = d2r(decDeg);
+          const lat = d2r(latDeg);
+
+          const sinAlt = clamp(
+            Math.sin(dec) * Math.sin(lat) + Math.cos(dec) * Math.cos(lat) * Math.cos(ha)
+          );
+          const alt = Math.asin(sinAlt);
+          const y = -Math.sin(ha) * Math.cos(dec);
+          const x = Math.sin(dec) * Math.cos(lat) - Math.cos(dec) * Math.sin(lat) * Math.cos(ha);
+          const az = Math.atan2(y, x);
+
+          const altDeg = r2d(alt);
+          const azDeg = norm360(r2d(az));
+
+          if (process.env.NODE_ENV === 'development') {
+            console.log('EQ→HOR 结果:', {
+              JD, GMST, LST, HA,
+              haRad: ha, decRad: dec, latRad: lat,
+              az: azDeg, alt: altDeg
+            });
+          }
+
+          return { az: azDeg, alt: altDeg };
+        } catch (e) {
+          console.error('EQ→HOR 计算异常:', e, {
+            raDeg, decDeg, latDeg, lonDeg, dateUTC, tms
+          });
+          return { az: NaN, alt: NaN };
+        }
+      },
+
+
+
+
+
+      // === 增强的卡片信息更新方法 ===
+      updateCardInfo(currentRa, currentDec, targetRa, targetDec, azimuthVal, altitudeVal, raAdjustment, decAdjustment, unitHint) {
+        const parseValue = v => (v === null || v === '' || v === undefined) ? 0 : (Number(v) || 0)
+
+        const currentRaNum = parseValue(currentRa)
+        const currentDecNum = parseValue(currentDec)
+        const targetRaNum = parseValue(targetRa)
+        const targetDecNum = parseValue(targetDec)
+        const azVal = parseValue(azimuthVal)
+        const altVal = parseValue(altitudeVal)
+
+        // 1) 位置显示（原样）
+        this.currentPosition.ra = this.formatCoordinate(currentRaNum, 'ra')
+        this.currentPosition.dec = this.formatCoordinate(currentDecNum, 'dec')
+        this.targetPosition.ra = this.formatCoordinate(targetRaNum, 'ra')
+        this.targetPosition.dec = this.formatCoordinate(targetDecNum, 'dec')
+
+        // 2) 调整量：以传入单位为准写入（默认用 props.adjustmentUnit）
+        const inUnit = unitHint || this.adjustmentUnit
+        // 如果传入是"度"，但你 props 设为了"arcmin"，也没关系——显示会自动换算
+        // 这里保存"原始数 + 它的单位（通过 props）"
+        this.adjustment.azimuth = azVal
+        this.adjustment.altitude = altVal
+        this.adjustmentUnit = inUnit  // 如果希望每次随数据切换单位，可加入这一行
+
+        // 3) 在调整阶段，每次接收到调整数据时增加校准轮数
+        if (this.calibrationPhase === 'adjusting') {
+          this.calibrationLoopCount++
+          this.addLog(this.$t('Calibration Round Started', [this.calibrationLoopCount]), 'info')
+        }
+
+        // 4) 极轴完成判定（用角分比较）
+        const azArcmin = this.unitToArcmin(azVal, inUnit)
+        const altArcmin = this.unitToArcmin(altVal, inUnit)
+        this.isPolarAligned = Math.abs(azArcmin) < 1.0 && Math.abs(altArcmin) < 1.0
+
+        if (process.env.NODE_ENV === 'development') {
+          console.log('PolarAlignment update:', {
+            unit: inUnit,
+            adj_raw: { azimuth: azVal, altitude: altVal },
+            adj_arcmin: { az: azArcmin, alt: altArcmin },
+            isPolarAligned: this.isPolarAligned,
+            calibrationRound: this.calibrationLoopCount
+          })
+        }
+
+        if (this.showTrajectoryOverlay && this.targetRawPosition) {
+          this.redrawTrajectory()
+        }
+      },
+
+
+      /**
+       * 根据三个校准点计算假极轴位置
+       * 使用三点极轴校准算法
+       */
+      calculateFakePolarAxis() {
+        if (this.calibrationPoints.length !== this.maxCalibrationPoints) {
+          this.addLog('需要3个校准点才能计算假极轴位置', 'warning')
+          return false
+        }
+
+        try {
+          const [p1, p2, p3] = this.calibrationPoints
+
+          // 将三个点转换为笛卡尔坐标
+          const cart1 = this.equatorialToCartesian(p1.ra, p1.dec)
+          const cart2 = this.equatorialToCartesian(p2.ra, p2.dec)
+          const cart3 = this.equatorialToCartesian(p3.ra, p3.dec)
+
+          // 计算两个向量
+          const v1 = {
+            x: cart2.x - cart1.x,
+            y: cart2.y - cart1.y,
+            z: cart2.z - cart1.z
+          }
+          const v2 = {
+            x: cart3.x - cart1.x,
+            y: cart3.y - cart1.y,
+            z: cart3.z - cart1.z
+          }
+
+          // 计算法向量（叉积）
+          const normal = this.crossProduct(v1, v2)
+
+          // 检查法向量是否为零向量
+          const normalLength = this.vectorLength(normal)
+          if (normalLength < 1e-10) {
+            this.addLog('三个校准点共线，无法计算假极轴位置', 'error')
+            return false
+          }
+
+          // 归一化法向量
+          const unitNormal = this.normalizeVector(normal)
+
+          // 计算与单位球面的交点（假极点）
+          const fakePolarPoint = {
+            x: unitNormal.x,
+            y: unitNormal.y,
+            z: unitNormal.z
+          }
+
+          // 选择正确的交点（z坐标为正的）
+          if (fakePolarPoint.z < 0) {
+            fakePolarPoint.x = -fakePolarPoint.x
+            fakePolarPoint.y = -fakePolarPoint.y
+            fakePolarPoint.z = -fakePolarPoint.z
+          }
+
+          // 将假极点转换为赤道坐标
+          const fakePolarEquatorial = this.cartesianToEquatorial(fakePolarPoint)
+
+          // 保存假极轴位置
+          this.fakePolarAxis.ra = fakePolarEquatorial.ra
+          this.fakePolarAxis.dec = fakePolarEquatorial.dec
+          this.fakePolarAxis.calculated = true
+
+          this.addLog(`假极轴位置计算完成: RA=${fakePolarEquatorial.ra.toFixed(4)}°, DEC=${fakePolarEquatorial.dec.toFixed(4)}°`, 'success')
+
+          return true
+        } catch (error) {
+          this.addLog(`计算假极轴位置时出错: ${error.message}`, 'error')
+          console.error('计算假极轴位置错误：', error)
+          return false
+        }
+      },
+
+      /**
+       * 将赤道坐标转换为笛卡尔坐标
+       */
+      equatorialToCartesian(ra, dec, radius = 1) {
+        const raRad = ra * Math.PI / 180.0
+        const decRad = dec * Math.PI / 180.0
+
+        return {
+          x: radius * Math.cos(decRad) * Math.cos(raRad),
+          y: radius * Math.cos(decRad) * Math.sin(raRad),
+          z: radius * Math.sin(decRad)
+        }
+      },
+
+      /**
+       * 将笛卡尔坐标转换为赤道坐标
+       */
+      cartesianToEquatorial(cart) {
+        const radius = Math.sqrt(cart.x * cart.x + cart.y * cart.y + cart.z * cart.z)
+
+        const dec = Math.asin(cart.z / radius) * 180.0 / Math.PI
+        let ra = Math.atan2(cart.y, cart.x) * 180.0 / Math.PI
+
+        // 确保RA在0-360度范围内
+        if (ra < 0) ra += 360.0
+
+        return { ra, dec }
+      },
+
+      /**
+       * 计算两个向量的叉积
+       */
+      crossProduct(v1, v2) {
+        return crossProduct3(v1, v2)
+      },
+
+      /**
+       * 计算向量长度
+       */
+      vectorLength(v) {
+        return vectorLength3(v)
+      },
+
+      /**
+       * 归一化向量
+       */
+      normalizeVector(v) {
+        return normalizeVector3(v)
+      },
+
+      /**
+       * 绘制假极轴位置
+       */
+      drawFakePolarAxis(fakePolarRA, fakePolarDEC) {
+        this.addLog(`绘制假极轴位置: RA=${fakePolarRA.toFixed(4)}°, DEC=${fakePolarDEC.toFixed(4)}°`, 'info')
+
+        try {
+          // 定义假极轴的颜色（紫色）
+          const fakePolarColor = {
+            stroke: "#9C27B0",        // 紫色边框
+            strokeOpacity: 1,         // 边框不透明度
+            fill: "#9C27B0",          // 紫色填充
+            fillOpacity: 0.3          // 填充不透明度（半透明）
+          }
+
+          // 使用专门的假极轴绘制事件，避免与目标点冲突
+          this.$bus.$emit('DrawFakePolarAxisCircle',
+            fakePolarRA,
+            fakePolarDEC,
+            fakePolarColor,
+            'FakePolarAxis',
+            '假极轴'
+          )
+
+          this.addLog(`假极轴位置已绘制: RA=${fakePolarRA.toFixed(4)}°, DEC=${fakePolarDEC.toFixed(4)}°`, 'info')
+
+        } catch (error) {
+          this.addLog(`绘制假极轴位置时出错: ${error.message}`, 'error')
+          console.error('绘制假极轴位置错误：', error)
+        }
+      },
+      // ========================================
+      // 单位换算方法
+      // ========================================
+      unitToArcmin(val, unit) {
+        if (!Number.isFinite(val)) return NaN
+        if (unit === 'deg') return val * 60
+        if (unit === 'arcsec') return val / 60
+        return val // 'arcmin'
+      },
+      arcminToUnit(valArcmin, unit) {
+        if (!Number.isFinite(valArcmin)) return NaN
+        if (unit === 'deg') return valArcmin / 60
+        if (unit === 'arcsec') return valArcmin * 60
+        return valArcmin
+      },
+      unitGlyph(unit) {
+        if (unit === 'deg') return '°'
+        if (unit === 'arcsec') return '″'
+        return '′' // arcmin
+      },
+
+      // ========================================
+      // 左右/上下映射（面向极点）方法
+      // ========================================
+      // 根据当前坐标计算朝向哪个极点
+      calculateFacingPole() {
+        if (!this.$store || !this.$store.state.currentLocation) {
+          return 'north' // 默认返回北极
+        }
+        
+        const lat = this.$store.state.currentLocation.lat
+        // 北半球（纬度 > 0）面向北极，南半球（纬度 < 0）面向南极
+        return lat >= 0 ? 'north' : 'south'
+      },
+
+      // azSign > 0 = 朝东；azSign < 0 = 朝西
+      azLabelBySign(azSign) {
+        // 动态计算朝向极点，而不是使用 props
+        const facingPole = this.calculateFacingPole()
+        // 面向北极点：东=→右，西=←左；面向南极点则相反
+        const east = (facingPole === 'north') ? this.$t('→ Right (East)') : this.$t('← Left (East)')
+        const west = (facingPole === 'north') ? this.$t('← Left (West)') : this.$t('→ Right (West)')
+        return azSign >= 0 ? east : west
+      },
+      // altSign > 0 = 抬高；altSign < 0 = 降低
+      altLabelBySign(altSign) {
+        return altSign >= 0 ? this.$t('↑ Up (Raise)') : this.$t('↓ Down (Lower)')
+      },
+
+      // ========================================
+      // 统一格式化"数值 + 单位"方法
+      // ========================================
+      formatWithUnit(valInArcmin, unit, digits = 1) {
+        const v = this.arcminToUnit(Math.abs(valInArcmin), unit)
+        const glyph = this.unitGlyph(unit)
+        return `${v.toFixed(digits)}${glyph}`
+      },
+
+      // ========================================
+      // 颜色工具方法
+      // ========================================
+      getCalibrationPointColor() {
+        return {
+          stroke: COLORS.WHITE,
+          strokeOpacity: 1,
+          fill: COLORS.WHITE,
+          fillOpacity: 0.2
+        }
+      },
+
+      getCurrentPositionColor() {
+        return {
+          stroke: "#00BFFF",
+          strokeOpacity: 1,
+          fill: "#00BFFF",
+          fillOpacity: 0.3
+        }
+      },
+
+      getTargetPointColor() {
+        return {
+          stroke: COLORS.SUCCESS,
+          strokeOpacity: 1,
+          fill: COLORS.SUCCESS,
+          fillOpacity: 0.3
+        }
+      },
+
+      getFakePolarAxisColor() {
+        return {
+          stroke: "#9C27B0",
+          strokeOpacity: 1,
+          fill: "#9C27B0",
+          fillOpacity: 0.3
+        }
+      },
+    },
+  }
+</script>
+
+<style scoped>
+/* === 轨迹覆盖层样式 === */
+.trajectory-overlay {
+  position: fixed;
+  inset: 0;
+  background: black;
+  z-index: 2000 !important;
+  pointer-events: auto;
+}
+.trajectory-overlay canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+.overlay-panel {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  background: rgba(30, 30, 30, 0.7);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: move;
+}
+.panel-row { display: flex; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+.panel-label { opacity: 0.85; }
+.panel-value { opacity: 0.95; }
+.panel-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.panel-btn { background: rgba(255,255,255,0.14); color: #fff; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+.panel-btn.small { padding: 4px 8px; font-size: 12px; }
+.panel-btn:hover { background: rgba(255,255,255,0.22); }
+.trajectory-status-counter {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 104px;
+  justify-content: space-between;
+  background: rgba(30, 30, 30, 0.72);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1;
+  pointer-events: none;
+}
+.trajectory-status-counter.windowed {
+  right: 10px;
+  bottom: 10px;
+}
+
+.trajectory-window {
+  position: fixed;
+  z-index: 2000 !important;
+  background: rgba(18,18,18,0.95);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+  overflow: hidden;
+  pointer-events: auto;
+}
+.window-header {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  background: rgba(45,45,55,0.9);
+  color: #fff;
+  cursor: move;
+}
+.window-title { font-size: 13px; }
+.window-actions { display: flex; gap: 6px; }
+.window-content { width: 100%; height: calc(100% - 32px); position: relative; overflow: hidden; }
+.window-content canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.overlay-close-btn {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.overlay-close-btn:hover {
+  background: rgba(255,255,255,0.2);
+}
+.overlay-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  color: rgba(255,255,255,0.85);
+  font-size: 12px;
+}
+/* === 最小化状态样式 === */
+.polar-alignment-minimized {
+  position: fixed;
+  width: 250px;
+  max-width: 80vw;
+  background: rgba(35, 35, 45, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  backdrop-filter: blur(10px);
+  z-index: 2000;
+  cursor: move;
+  user-select: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+  /* 添加背景隔离，防止操作映射到背景 */
+  isolation: isolate;
+  /* 移除contain属性，它可能阻止拖动事件 */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* 拖动状态：移除过渡动画和复杂效果 */
+.polar-alignment-minimized.dragging {
+  transition: none !important;
+  backdrop-filter: none !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+  touch-action: manipulation;
+}
+
+.polar-alignment-minimized:hover {
+  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.4);
+}
+
+.polar-alignment-minimized.dragging:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+}
+
+.minimized-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(60, 60, 70, 0.9);
+  border-radius: 8px 8px 0 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.minimized-drag-area {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  cursor: move;
+  /* 确保拖动区域有正确的交互 */
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.minimized-icon {
+  color: #64b5f6;
+  font-size: 16px;
+  margin-right: 8px;
+}
+
+.minimized-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  flex: 1;
+}
+
+.minimized-controls {
+  display: flex;
+  gap: 4px;
+  /* 确保控制区域可以接收事件 */
+  position: relative;
+  z-index: 20;
+  pointer-events: auto;
+}
+
+.minimized-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  /* 移动端触摸优化 */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  /* 确保按钮可以正确点击 */
+  position: relative;
+  z-index: 10;
+  /* 确保按钮可以接收点击事件 */
+  pointer-events: auto;
+}
+
+.minimized-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.minimized-btn:active {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(0.95);
+}
+
+.minimized-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+}
+
+.status-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f44336;
+  transition: all 0.3s ease;
+}
+
+.status-indicator.online {
+  background: #4caf50;
+  box-shadow: 0 0 4px rgba(76, 175, 80, 0.6);
+}
+
+.status-text {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* === 完整控件样式 === */
+.polar-alignment-widget {
+  position: fixed;
+  width: clamp(350px, 88vw, 980px);
+  max-width: calc(100vw - 24px);
+  /* 让头部 + 内容以列布局撑开，并允许内容区在低高度下内部滚动 */
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  background: rgba(35, 35, 45, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  backdrop-filter: blur(10px);
+  z-index: 2000;
+  cursor: move;
+  user-select: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+  overflow: hidden;
+  /* 添加背景隔离，防止操作映射到背景 */
+  isolation: isolate;
+  /* 移除contain属性，它可能阻止拖动事件 */
+  /* 允许在移动端对内容区进行滚动手势；拖动手柄自己会用 touch-action: none */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* 拖动状态：移除过渡动画和复杂效果 */
+.polar-alignment-widget.dragging {
+  transition: none !important;
+  backdrop-filter: none !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+  touch-action: manipulation;
+}
+
+.polar-alignment-widget:hover {
+  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.4);
+}
+
+.polar-alignment-widget.dragging:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+}
+
+.polar-alignment-widget:not(.collapsed) {
+  left: 0 !important;
+  top: 0 !important;
+  width: 100vw;
+  height: 100dvh;
+  max-width: 100vw;
+  max-height: 100dvh;
+  border-radius: 0;
+  box-sizing: border-box;
+  cursor: default;
+}
+
+@supports not (height: 100dvh) {
+  .polar-alignment-widget:not(.collapsed) {
+    height: 100vh;
+    max-height: 100vh;
+  }
+}
+
+.polar-alignment-widget:not(.collapsed) .header-drag-area {
+  cursor: default;
+}
+
+.polar-alignment-widget.collapsed {
+  width: min(300px, 82vw);
+  max-width: 82vw;
+}
+
+.polar-alignment-widget.collapsed .widget-header {
+  padding: clamp(6px, 1.8vw, 9px) clamp(8px, 2.2vw, 11px);
+  gap: clamp(4px, 1.2vw, 8px);
+}
+
+.polar-alignment-widget.collapsed .header-left {
+  gap: clamp(4px, 1.2vw, 7px);
+}
+
+.polar-alignment-widget.collapsed .header-icon {
+  font-size: clamp(14px, 3.8vw, 17px);
+}
+
+.polar-alignment-widget.collapsed .header-title {
+  font-size: clamp(11px, 3vw, 14px);
+  max-width: 100%;
+}
+
+.polar-alignment-widget.collapsed .status-dot {
+  width: clamp(7px, 2vw, 10px);
+  height: clamp(7px, 2vw, 10px);
+}
+
+.polar-alignment-widget.collapsed .header-controls {
+  gap: clamp(3px, 1vw, 6px);
+  flex-shrink: 0;
+}
+
+.polar-alignment-widget.collapsed .header-btn {
+  width: clamp(24px, 6.4vw, 30px);
+  height: clamp(24px, 6.4vw, 30px);
+  border-radius: 3px;
+}
+
+.polar-alignment-widget.collapsed .header-btn .v-icon {
+  font-size: clamp(13px, 3.4vw, 16px) !important;
+}
+
+/* === 控件头部样式 === */
+.widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: clamp(calc(6px * var(--pa-y-scale, 1)), calc(20px * var(--pa-y-scale, 1)), 20px) clamp(calc(10px * var(--pa-x-scale, 1)), calc(28px * var(--pa-x-scale, 1)), 28px);
+  background: rgba(60, 60, 70, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.header-drag-area {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  cursor: move;
+  /* 确保拖动区域有正确的交互 */
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  /* 添加拖动时的视觉反馈 */
+  transition: background-color 0.2s ease;
+  /* 确保拖动区域有正确的指针事件 */
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.widget-header:hover {
+  background: rgba(60, 60, 70, 0.95);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: clamp(calc(6px * var(--pa-x-scale, 1)), calc(14px * var(--pa-x-scale, 1)), 14px);
+  flex: 1;
+  min-width: 0;
+}
+
+.header-icon {
+  color: #64b5f6;
+  font-size: clamp(calc(16px * var(--pa-y-scale, 1)), calc(26px * var(--pa-y-scale, 1)), 26px);
+}
+
+.header-title {
+  font-size: clamp(calc(13px * var(--pa-y-scale, 1)), calc(22px * var(--pa-y-scale, 1)), 22px);
+  font-weight: 600;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connection-indicator {
+  display: flex;
+  align-items: center;
+}
+
+.status-dot {
+  width: clamp(calc(8px * var(--pa-y-scale, 1)), calc(14px * var(--pa-y-scale, 1)), 14px);
+  height: clamp(calc(8px * var(--pa-y-scale, 1)), calc(14px * var(--pa-y-scale, 1)), 14px);
+  border-radius: 50%;
+  background: #f44336;
+  transition: all 0.3s ease;
+}
+
+.status-dot.online {
+  background: #4caf50;
+  box-shadow: 0 0 6px rgba(76, 175, 80, 0.6);
+}
+
+.header-controls {
+  display: flex;
+  gap: clamp(calc(6px * var(--pa-x-scale, 1)), calc(14px * var(--pa-x-scale, 1)), 14px);
+  /* 确保控制区域可以接收事件 */
+  position: relative;
+  z-index: 20;
+  pointer-events: auto;
+}
+
+.header-btn {
+  width: clamp(calc(24px * var(--pa-x-scale, 1)), calc(44px * var(--pa-x-scale, 1)), 44px);
+  height: clamp(calc(24px * var(--pa-y-scale, 1)), calc(44px * var(--pa-y-scale, 1)), 44px);
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  /* 移动端触摸优化 */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  /* 确保按钮可以正确点击 */
+  position: relative;
+  z-index: 10;
+  /* 确保按钮可以接收点击事件 */
+  pointer-events: auto;
+}
+
+.header-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.header-btn:active {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(0.95);
+}
+
+.header-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.trajectory-header-btn {
+  color: #90caf9;
+}
+
+.trajectory-header-btn.trajectory-active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #1e88e5, #00acc1);
+  box-shadow: 0 0 0 2px rgba(144, 202, 249, 0.30), 0 4px 14px rgba(30, 136, 229, 0.34);
+}
+
+.pole-master-header-btn {
+  color: #ffd54f;
+}
+
+.pole-master-header-btn.pole-master-active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #7e57c2, #ff7043);
+  box-shadow: 0 0 0 2px rgba(255, 213, 79, 0.32), 0 4px 14px rgba(126, 87, 194, 0.34);
+}
+
+/* === 控件内容样式 === */
+.widget-content {
+  transition: all 0.3s ease;
+  /* 确保内容区域有适当的背景隔离 */
+  background: rgba(35, 35, 45, 0.95);
+  position: relative;
+  z-index: 1;
+  /* 确保内容区域不会阻止拖动事件 */
+  pointer-events: auto;
+  min-height: 0;
+}
+
+/* 拖动状态：移除过渡动画 */
+.widget-content.dragging {
+  transition: none !important;
+}
+
+.widget-content.collapsed {
+  padding: clamp(8px, 2.2vw, 10px);
+}
+
+.widget-content.expanded {
+  --pa-content-padding-y: clamp(calc(8px * var(--pa-y-scale, 1)), calc(24px * var(--pa-y-scale, 1)), 24px);
+  --pa-content-padding-x: clamp(calc(8px * var(--pa-x-scale, 1)), calc(24px * var(--pa-x-scale, 1)), 24px);
+  --pa-bottom-safe-space: clamp(10px, 2vh, 18px);
+  padding: var(--pa-content-padding-y) var(--pa-content-padding-x) calc(var(--pa-content-padding-y) + var(--pa-bottom-safe-space) + env(safe-area-inset-bottom, 0px));
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(calc(8px * var(--pa-y-scale, 1)), calc(20px * var(--pa-y-scale, 1)), 20px);
+  overscroll-behavior: contain;
+}
+
+/* === 收缩状态样式 === */
+.collapsed-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.collapsed-progress {
+  flex-shrink: 0;
+}
+
+.progress-circle {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: conic-gradient(#64b5f6 0deg var(--progress, 0deg),
+      rgba(255, 255, 255, 0.1) var(--progress, 0deg) 360deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.progress-circle::before {
+  content: '';
+  position: absolute;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(35, 35, 45, 0.95);
+}
+
+.progress-text {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.collapsed-status {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.collapsed-pole-master-error {
+  flex: 1;
+  min-height: clamp(44px, 12vw, 54px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(8px, 2.4vw, 12px);
+}
+
+.collapsed-pole-master-error .status-label {
+  font-size: clamp(11px, 2.6vw, 13px);
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.collapsed-pole-master-error .status-value {
+  font-size: clamp(14px, 5.2vw, 22px);
+  font-weight: 700;
+  color: #ffd54f;
+}
+
+.status-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.status-label {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.status-value {
+  color: #ffffff;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.status-value.needs-adjustment {
+  color: #ff9800;
+}
+
+/* === 展开状态样式 === */
+.content-sections {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(calc(220px * var(--pa-x-scale, 1)), 0.92fr);
+  grid-template-areas:
+    "progress log"
+    "position adjustment"
+    "control control";
+  row-gap: clamp(calc(8px * var(--pa-y-scale, 1)), calc(20px * var(--pa-y-scale, 1)), 20px);
+  column-gap: clamp(calc(8px * var(--pa-x-scale, 1)), calc(20px * var(--pa-x-scale, 1)), 20px);
+  /* 优化布局，充分利用可用空间 */
+  width: 100%;
+  min-height: 0;
+  align-items: stretch;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* === 校准步骤进度条样式 === */
+.calibration-progress {
+  grid-area: progress;
+  margin-bottom: 0;
+  padding: clamp(calc(8px * var(--pa-y-scale, 1)), calc(20px * var(--pa-y-scale, 1)), 20px) clamp(calc(10px * var(--pa-x-scale, 1)), calc(24px * var(--pa-x-scale, 1)), 24px) clamp(calc(18px * var(--pa-y-scale, 1)), calc(34px * var(--pa-y-scale, 1)), 34px);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.progress-title {
+  font-size: clamp(calc(10px * var(--pa-y-scale, 1)), calc(16px * var(--pa-y-scale, 1)), 16px);
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.calibration-loop-info {
+  font-size: clamp(calc(8px * var(--pa-y-scale, 1)), calc(10px * var(--pa-y-scale, 1)), 10px);
+  color: #ff9800;
+  font-weight: 500;
+  padding: 2px 6px;
+  background: rgba(255, 152, 0, 0.2);
+  border-radius: 4px;
+  animation: loop-pulse 2s infinite;
+}
+
+@keyframes loop-pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.progress-bar {
+  position: relative;
+  width: 100%;
+  height: clamp(calc(5px * var(--pa-y-scale, 1)), calc(12px * var(--pa-y-scale, 1)), 12px);
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: visible;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #64b5f6, #4caf50);
+  border-radius: 4px;
+  transition: width 0.1s ease;
+}
+
+.progress-nodes {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.progress-node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.node-circle {
+  width: clamp(calc(15px * var(--pa-y-scale, 1)), calc(36px * var(--pa-y-scale, 1)), 36px);
+  height: clamp(calc(15px * var(--pa-y-scale, 1)), calc(36px * var(--pa-y-scale, 1)), 36px);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(calc(8px * var(--pa-y-scale, 1)), calc(16px * var(--pa-y-scale, 1)), 16px);
+  font-weight: bold;
+  color: #ffffff;
+  transition: all 0.3s ease;
+}
+
+.progress-node.completed .node-circle {
+  background: #4caf50;
+  border-color: #4caf50;
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
+}
+
+.progress-node.current .node-circle {
+  background: #64b5f6;
+  border-color: #64b5f6;
+  box-shadow: 0 0 8px rgba(100, 181, 246, 0.4);
+}
+
+.progress-node.adjustment-node .node-circle {
+  background: rgba(255, 152, 0, 0.3);
+  border-color: rgba(255, 152, 0, 0.5);
+}
+
+.progress-node.adjustment-node.active .node-circle {
+  background: #ff9800;
+  border-color: #ff9800;
+  box-shadow: 0 0 8px rgba(255, 152, 0, 0.4);
+}
+
+.progress-node.calibration-node .node-circle {
+  background: rgba(255, 152, 0, 0.3);
+  border-color: rgba(255, 152, 0, 0.5);
+}
+
+.progress-node.calibration-node.active .node-circle {
+  background: #ff9800;
+  border-color: #ff9800;
+  box-shadow: 0 0 8px rgba(255, 152, 0, 0.4);
+}
+
+.progress-node.calibration-node.looping .node-circle {
+  animation: calibration-pulse 2s infinite;
+}
+
+@keyframes calibration-pulse {
+  0% {
+    background: #ff9800;
+    box-shadow: 0 0 8px rgba(255, 152, 0, 0.4);
+  }
+
+  50% {
+    background: #ff5722;
+    box-shadow: 0 0 12px rgba(255, 152, 0, 0.6);
+  }
+
+  100% {
+    background: #ff9800;
+    box-shadow: 0 0 8px rgba(255, 152, 0, 0.4);
+  }
+}
+
+.progress-node.calibration-node.looping .node-circle i {
+  animation: calibration-rotate 2s linear infinite;
+}
+
+@keyframes calibration-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.progress-node.verification-node .node-circle {
+  background: rgba(76, 175, 80, 0.3);
+  border-color: rgba(76, 175, 80, 0.5);
+}
+
+.progress-node.verification-node.active .node-circle {
+  background: #4caf50;
+  border-color: #4caf50;
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
+}
+
+.node-label {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: clamp(calc(7px * var(--pa-y-scale, 1)), calc(14px * var(--pa-y-scale, 1)), 14px);
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  margin-top: clamp(calc(1px * var(--pa-y-scale, 1)), calc(8px * var(--pa-y-scale, 1)), 8px);
+  white-space: nowrap;
+  text-align: center;
+}
+
+.progress-node {
+  position: relative;
+}
+
+/* === 位置信息样式 === */
+.position-section {
+  grid-area: position;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.position-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  row-gap: clamp(calc(6px * var(--pa-y-scale, 1)), calc(12px * var(--pa-y-scale, 1)), 12px);
+  column-gap: clamp(calc(6px * var(--pa-x-scale, 1)), calc(12px * var(--pa-x-scale, 1)), 12px);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  padding: clamp(calc(8px * var(--pa-y-scale, 1)), calc(18px * var(--pa-y-scale, 1)), 18px) clamp(calc(8px * var(--pa-x-scale, 1)), calc(18px * var(--pa-x-scale, 1)), 18px);
+  height: 100%;
+}
+
+.position-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(calc(2px * var(--pa-y-scale, 1)), calc(8px * var(--pa-y-scale, 1)), 8px);
+  padding: clamp(calc(6px * var(--pa-y-scale, 1)), calc(18px * var(--pa-y-scale, 1)), 18px) clamp(calc(6px * var(--pa-x-scale, 1)), calc(18px * var(--pa-x-scale, 1)), 18px);
+  border-radius: 4px;
+  transition: all 0.3s ease;
+  min-width: 0;
+}
+
+.position-cell.current {
+  background: rgba(100, 181, 246, 0.1);
+  border: 1px solid rgba(100, 181, 246, 0.2);
+}
+
+.position-cell.target {
+  background: rgba(255, 152, 0, 0.1);
+  border: 1px solid rgba(255, 152, 0, 0.2);
+}
+
+.cell-label {
+  font-size: clamp(calc(9px * var(--pa-y-scale, 1)), calc(14px * var(--pa-y-scale, 1)), 14px);
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-value {
+  font-size: clamp(calc(13px * var(--pa-y-scale, 1)), calc(22px * var(--pa-y-scale, 1)), 22px);
+  color: #ffffff;
+  font-family: monospace;
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* === 调整指导样式 === */
+.adjustment-section {
+  grid-area: adjustment;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.adjustment-instructions {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(calc(6px * var(--pa-y-scale, 1)), calc(16px * var(--pa-y-scale, 1)), 16px);
+  height: 100%;
+}
+
+.adjustment-item {
+  display: flex;
+  align-items: center;
+  gap: clamp(calc(8px * var(--pa-x-scale, 1)), calc(12px * var(--pa-x-scale, 1)), 12px);
+  padding: clamp(calc(7px * var(--pa-y-scale, 1)), calc(18px * var(--pa-y-scale, 1)), 18px) clamp(calc(9px * var(--pa-x-scale, 1)), calc(18px * var(--pa-x-scale, 1)), 18px);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  transition: all 0.3s ease;
+  border: 1px solid transparent;
+  min-height: clamp(calc(52px * var(--pa-y-scale, 1)), calc(96px * var(--pa-y-scale, 1)), 96px);
+  flex: 1;
+}
+
+.adjustment-item.active {
+  background: rgba(255, 152, 0, 0.15);
+  border-color: #ff9800;
+}
+
+.adjustment-icon {
+  width: clamp(calc(28px * var(--pa-y-scale, 1)), calc(54px * var(--pa-y-scale, 1)), 54px);
+  height: clamp(calc(28px * var(--pa-y-scale, 1)), calc(54px * var(--pa-y-scale, 1)), 54px);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(calc(15px * var(--pa-y-scale, 1)), calc(24px * var(--pa-y-scale, 1)), 24px);
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.adjustment-item.active .adjustment-icon {
+  background: #ff9800;
+}
+
+.adjustment-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.adjustment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.adjustment-type {
+  font-size: clamp(calc(12px * var(--pa-y-scale, 1)), calc(20px * var(--pa-y-scale, 1)), 20px);
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.adjustment-value {
+  font-size: clamp(calc(16px * var(--pa-y-scale, 1)), calc(32px * var(--pa-y-scale, 1)), 32px);
+  color: #ffffff;
+  font-family: monospace;
+  font-weight: 700;
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
+  letter-spacing: 0;
+}
+
+.adjustment-action {
+  font-size: clamp(calc(10px * var(--pa-y-scale, 1)), calc(16px * var(--pa-y-scale, 1)), 16px);
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adjustment-item.active .adjustment-action {
+  color: #ff9800;
+}
+
+/* === 操作按钮样式 === */
+.control-section {
+  grid-area: control;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: row;
+  gap: clamp(calc(7px * var(--pa-x-scale, 1)), calc(10px * var(--pa-x-scale, 1)), 10px);
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: clamp(calc(7px * var(--pa-y-scale, 1)), calc(22px * var(--pa-y-scale, 1)), 22px) clamp(calc(12px * var(--pa-x-scale, 1)), calc(28px * var(--pa-x-scale, 1)), 28px);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: clamp(calc(14px * var(--pa-y-scale, 1)), calc(24px * var(--pa-y-scale, 1)), 24px);
+  font-weight: 500;
+  transition: all 0.3s ease;
+  pointer-events: auto;
+  min-height: clamp(calc(38px * var(--pa-y-scale, 1)), calc(78px * var(--pa-y-scale, 1)), 78px);
+  touch-action: manipulation;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.action-btn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-btn.primary {
+  background: linear-gradient(135deg, #64b5f6, #42a5f5);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(100, 181, 246, 0.3);
+}
+
+.action-btn.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #42a5f5, #2196f3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(100, 181, 246, 0.4);
+}
+
+.action-btn.secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.action-btn.secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.action-btn.success {
+  background: linear-gradient(135deg, #4caf50, #43a047);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(76, 175, 80, 0.3);
+}
+
+.action-btn.success:hover:not(:disabled) {
+  background: linear-gradient(135deg, #43a047, #388e3c);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+}
+
+.action-btn.simulation {
+  background: linear-gradient(135deg, #26a69a, #00897b);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(38, 166, 154, 0.3);
+}
+
+.action-btn.simulation:hover:not(:disabled) {
+  background: linear-gradient(135deg, #00897b, #00796b);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(38, 166, 154, 0.4);
+}
+
+.action-btn.restore {
+  background: linear-gradient(135deg, #ff9800, #f57c00);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(255, 152, 0, 0.3);
+}
+
+.action-btn.restore:hover:not(:disabled) {
+  background: linear-gradient(135deg, #f57c00, #ef6c00);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.4);
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* === 日志显示样式 === */
+.log-section {
+  grid-area: log;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.log-display {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  padding: clamp(calc(7px * var(--pa-y-scale, 1)), calc(20px * var(--pa-y-scale, 1)), 20px) clamp(calc(7px * var(--pa-x-scale, 1)), calc(20px * var(--pa-x-scale, 1)), 20px);
+  height: 100%;
+  min-height: clamp(calc(56px * var(--pa-y-scale, 1)), calc(128px * var(--pa-y-scale, 1)), 128px);
+  display: flex;
+  align-items: center;
+}
+
+.latest-log {
+  display: flex;
+  align-items: center;
+  gap: clamp(calc(7px * var(--pa-x-scale, 1)), calc(18px * var(--pa-x-scale, 1)), 18px);
+  padding: clamp(calc(6px * var(--pa-y-scale, 1)), calc(16px * var(--pa-y-scale, 1)), 16px) clamp(calc(8px * var(--pa-x-scale, 1)), calc(20px * var(--pa-x-scale, 1)), 20px);
+  border-radius: 4px;
+  font-size: clamp(calc(10px * var(--pa-y-scale, 1)), calc(20px * var(--pa-y-scale, 1)), 20px);
+  background: rgba(255, 255, 255, 0.05);
+  border-left: 3px solid transparent;
+  width: 100%;
+  min-width: 0;
+}
+
+.latest-log.info {
+  border-left-color: #64b5f6;
+}
+
+.latest-log.warning {
+  border-left-color: #ff9800;
+}
+
+.latest-log.success {
+  border-left-color: #4caf50;
+}
+
+.latest-log.error {
+  border-left-color: #f44336;
+}
+
+.log-timestamp {
+  color: rgba(255, 255, 255, 0.6);
+  font-family: monospace;
+  font-size: clamp(calc(9px * var(--pa-y-scale, 1)), calc(18px * var(--pa-y-scale, 1)), 18px);
+  min-width: clamp(calc(58px * var(--pa-x-scale, 1)), calc(112px * var(--pa-x-scale, 1)), 112px);
+  flex-shrink: 0;
+  text-align: center;
+  padding-right: clamp(calc(7px * var(--pa-x-scale, 1)), calc(18px * var(--pa-x-scale, 1)), 18px);
+  border-right: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.log-message {
+  color: rgba(255, 255, 255, 0.9);
+  flex: 1;
+  line-height: 1.4;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-empty {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  padding: 20px;
+  font-style: italic;
+}
+
+/* 移动端触摸优化 */
+@media (hover: none) and (pointer: coarse) {
+  .minimized-header {
+    padding: 12px 16px;
+  }
+
+  .minimized-btn {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* 面板标题 */
+.panel-header {
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.panel-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #64b5f6;
+}
+
+.panel-indicator.live {
+  animation: pulse 2s infinite;
+}
+
+.panel-indicator.control {
+  background: #ff9800;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+
+
+.card-header {
+  background: rgba(60, 60, 70, 0.8);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  pointer-events: auto;
+}
+
+.card-header span {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.card-icon {
+  color: #64b5f6;
+  font-size: 18px;
+}
+
+.card-icon.warning {
+  color: #ff9800;
+}
+
+.card-icon.success {
+  color: #4caf50;
+}
+
+
+
+
+
+
+/* 指导调整阶段循环进度条样式 - 独立于控制面板，位于最高层 */
+.guidance-progress-indicator {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 99999; /* 确保在所有层之上，包括轨迹画布 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  pointer-events: none; /* 不阻挡鼠标事件 */
+  width: 100px; /* 固定宽度，避免文字超出导致位置变动 */
+  max-width: 100px;
+}
+
+.guidance-progress-circle {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0; /* 防止收缩 */
+}
+
+.progress-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.progress-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.1);
+  stroke-width: 6;
+}
+
+.progress-bar {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease, opacity 0.3s ease;
+}
+
+/* 空闲状态 - 半透明灰白色 */
+.guidance-progress-circle:not(.status-success):not(.status-error):not(.animating) .progress-bar {
+  stroke: rgba(200, 200, 200, 0.5); /* 半透明灰白色 */
+  opacity: 0.5;
+}
+
+/* 有进度时 - 蓝色 */
+.guidance-progress-circle.animating .progress-bar {
+  stroke: #2196F3; /* 蓝色 */
+  opacity: 1;
+  animation: progressPulse 2s ease-in-out infinite;
+}
+
+@keyframes progressPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* 成功状态动画 */
+.guidance-progress-circle.success-animation {
+  animation: successPulse 0.6s ease-in-out;
+}
+
+.guidance-progress-circle.status-success .progress-bar {
+  stroke: #4CAF50 !important; /* 绿色 */
+  stroke-width: 6;
+  opacity: 1;
+  animation: successRing 0.6s ease-in-out;
+}
+
+@keyframes successPulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes successRing {
+  0% {
+    stroke-width: 5;
+    opacity: 1;
+  }
+  50% {
+    stroke-width: 7;
+    opacity: 0.8;
+  }
+  100% {
+    stroke-width: 5;
+    opacity: 1;
+  }
+}
+
+/* 失败状态动画 */
+.guidance-progress-circle.error-animation {
+  animation: errorShake 0.5s ease-in-out;
+}
+
+.guidance-progress-circle.status-error .progress-bar {
+  stroke: #F44336 !important; /* 红色 */
+  stroke-width: 6;
+  opacity: 1;
+  animation: errorFlash 0.5s ease-in-out;
+}
+
+@keyframes errorShake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-5px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes errorFlash {
+  0%, 100% {
+    stroke-width: 5;
+    opacity: 1;
+  }
+  25%, 75% {
+    stroke-width: 7;
+    opacity: 0.5;
+  }
+  50% {
+    stroke-width: 6;
+    opacity: 0.8;
+  }
+}
+
+/* 移动端自适应 */
+@media (max-width: 768px) {
+  .guidance-progress-indicator {
+    width: 80px;
+    max-width: 80px;
+    bottom: 15px;
+    right: 15px;
+  }
+
+  .guidance-progress-circle {
+    width: 80px;
+    height: 80px;
+  }
+
+  .progress-svg {
+    width: 80px;
+    height: 80px;
+  }
+
+  .step-icon {
+    font-size: 20px;
+  }
+
+  .step-description {
+    font-size: 9px;
+    max-height: 1.8em; /* 移动端最多两行 */
+  }
+
+  .star-count {
+    font-size: 8px;
+  }
+
+  .progress-bar {
+    stroke-width: 4;
+  }
+}
+
+@media (max-width: 480px) {
+  .guidance-progress-indicator {
+    width: 70px;
+    max-width: 70px;
+    bottom: 10px;
+    right: 10px;
+  }
+
+  .guidance-progress-circle {
+    width: 70px;
+    height: 70px;
+  }
+
+  .progress-svg {
+    width: 70px;
+    height: 70px;
+  }
+
+  .step-icon {
+    font-size: 18px;
+  }
+
+  .step-description {
+    font-size: 8px;
+    max-height: 1.6em; /* 小屏幕最多两行 */
+  }
+
+  .star-count {
+    font-size: 7px;
+  }
+
+  .progress-bar {
+    stroke-width: 3;
+  }
+}
+
+.progress-content {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  padding: 0 4px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.step-icon {
+  font-size: 24px;
+  color: #fff;
+  margin-bottom: 2px;
+  flex-shrink: 0;
+}
+
+.step-description {
+  font-size: 10px;
+  color: #fff;
+  text-align: center;
+  font-weight: 500;
+  white-space: normal; /* 允许换行 */
+  word-wrap: break-word; /* 允许单词内换行 */
+  overflow-wrap: break-word; /* 现代浏览器支持 */
+  width: 100%;
+  max-width: 100%;
+  line-height: 1.2;
+  min-height: 1.2em; /* 至少一行的高度 */
+  max-height: 2.4em; /* 最多两行的高度 */
+  overflow: hidden; /* 超出部分隐藏 */
+  display: block;
+  hyphens: auto; /* 自动断字 */
+}
+
+.star-count {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* === 触摸优化 === */
+.polar-alignment-widget,
+.polar-alignment-minimized {
+  /* 触摸优化 */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+.header-drag-area,
+.minimized-drag-area {
+  /* 触摸优化 */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 拖动状态：移除触摸优化，允许正常触摸 */
+.polar-alignment-widget.dragging,
+.polar-alignment-minimized.dragging {
+  touch-action: manipulation;
+}
+
+/* === 性能优化 === */
+/* 拖动时禁用不必要的动画和效果 */
+.dragging * {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* 拖动时简化阴影和模糊效果 */
+.dragging .progress-circle::before,
+.dragging .node-circle,
+.dragging .status-indicator {
+  box-shadow: none !important;
+  filter: none !important;
+}
+</style>

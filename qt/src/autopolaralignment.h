@@ -1,0 +1,1274 @@
+#ifndef POLARALIGNMENT_H
+#define POLARALIGNMENT_H
+
+#include <QObject>
+#include <QTimer>
+#include <QThread>
+#include <QMutex>
+#include <QQueue>
+#include <QVector>
+#include <QPointF>
+#include <QString>
+#include <QStringList>
+#include <QDebug>
+#include <QElapsedTimer>
+#include <QEventLoop>
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QByteArray>
+#include <vector>
+
+#include <opencv2/core/core.hpp>
+#include <opencv2/imgproc.hpp>
+
+#include "Logger.h"
+#include "tools.h"
+#include "myclient.h"
+
+// 极轴校准状态枚举 - 定义校准过程中的各个状态
+enum class PolarAlignmentState {
+    IDLE,                   // 空闲状态 - 系统未运行校准
+    INITIALIZING,           // 初始化 - 系统正在初始化校准流程
+    CHECKING_POLAR_POINT,   // 检查极点位置 - 检查望远镜是否指向极点
+    MOVING_DEC_AWAY,        // 移动DEC轴脱离极点 - 将DEC轴从极点位置移开
+    WAITING_DEC_MOVE_END,   // 等待DEC轴移动结束 - 等待DEC轴移动结束
+    FIRST_CAPTURE,                    // 第一次拍摄 - 在第一个位置拍摄图像（短曝光）
+    FIRST_CAPTURE_LONG_EXPOSURE,      // 第一次拍摄长曝光重试 - 第一次拍摄失败后的长曝光重试
+    FIRST_CAPTURE_DEC_AVOIDANCE,      // 第一次拍摄DEC轴避障 - 第一次拍摄失败后的DEC轴避障
+    WAITING_FIRST_DEC_AVOIDANCE,      // 等待第一次DEC轴避障完成
+    MOVING_RA_FIRST,                  // 第一次RA轴移动 - 移动RA轴到第二个位置
+    WAITING_RA_MOVE_END,              // 等待RA轴移动结束 - 等待RA轴移动结束
+    SECOND_CAPTURE,                   // 第二次拍摄 - 在第二个位置拍摄图像（短曝光）
+    SECOND_CAPTURE_LONG_EXPOSURE,     // 第二次拍摄长曝光重试 - 第二次拍摄失败后的长曝光重试
+    SECOND_CAPTURE_RA_AVOIDANCE,      // 第二次拍摄RA轴避障 - 第二次拍摄失败后的RA轴避障
+    WAITING_SECOND_RA_AVOIDANCE,      // 等待第二次RA轴避障完成
+    MOVING_RA_SECOND,                 // 第二次RA轴移动 - 移动RA轴到第三个位置
+    WAITING_RA_MOVE_END_2,            // 等待RA轴移动结束 - 等待RA轴移动结束
+    THIRD_CAPTURE,                    // 第三次拍摄 - 在第三个位置拍摄图像（短曝光）
+    THIRD_CAPTURE_LONG_EXPOSURE,      // 第三次拍摄长曝光重试 - 第三次拍摄失败后的长曝光重试
+    THIRD_CAPTURE_RA_AVOIDANCE,       // 第三次拍摄RA轴避障 - 第三次拍摄失败后的RA轴避障
+    WAITING_THIRD_RA_AVOIDANCE,       // 等待第三次RA轴避障完成
+    CALCULATING_DEVIATION,  // 计算偏差 - 根据三次测量计算极轴偏差
+    GUIDING_ADJUSTMENT,     // 指导调整 - 指导用户调整极轴
+    FINAL_VERIFICATION,     // 最终验证 - 验证调整效果
+    ADJUSTING_FOR_OBSTACLE, // 调整避开遮挡物 - 向内调整避开遮挡物
+    COMPLETED,              // 完成 - 校准流程完成
+    FAILED,                 // 失败 - 校准流程失败
+    USER_INTERVENTION       // 需要用户干预 - 需要用户手动处理
+};
+
+// 指导调整阶段步骤枚举 - 定义指导调整过程中的各个步骤
+enum class GuidanceAdjustmentStep {
+    CAPTURING,              // 正在拍摄图像
+    CHECKING_STARS,         // 正在检查星点质量
+    SOLVING,                // 正在解析图像
+    CALCULATING,            // 正在计算偏差
+    SENDING_GUIDANCE,       // 正在发送调整指导
+    WAITING_USER,           // 等待用户调整
+    COMPLETED               // 步骤完成
+};
+
+// 图像内引导状态机（GUIDING_ADJUSTMENT阶段）
+enum class PolarImageGuidanceMode {
+    INIT = 0,
+    TRACKING_FUSED = 1,
+    RECOVERING_MULTI = 2,
+    REANCHOR_SOLVE = 3,
+    DONE = 4,
+    FAILED = 5
+};
+
+enum class PolarGuidanceTransformModel {
+    NONE = 0,
+    SIMILARITY = 1,
+    AFFINE = 2,
+    TRANSLATION = 3
+};
+
+struct PolarImageGuidePoint {
+    double x = -1.0;
+    double y = -1.0;
+    double score = 0.0;
+};
+
+struct PolarGuidanceRuntimeV2 {
+    bool hasLock = false;
+    PolarImageGuidePoint lockedStar;
+    cv::Point2d estimatedTargetPx{-1.0, -1.0};
+    bool estimatedTargetValid = false;
+    cv::Point2d finalTargetPx{-1.0, -1.0};
+    cv::Point2d displayTargetPx{-1.0, -1.0};
+    cv::Point2d currentStarPx{-1.0, -1.0};
+    bool inFrame = false;
+    int stableFrames = 0;
+    int lostFrames = 0;
+    int recoverFrames = 0;
+    int targetInvalidConsecutive = 0;
+    int qualityDropConsecutive = 0;
+    bool fullSolveUsedThisFrame = false;
+    int solveModeUsedThisFrame = 1;
+    double lockConfidence = 0.0;
+    double reprojErrPx = 0.0;
+    double inlierRatio = 0.0;
+    int inliers = 0;
+    double compensatedRemainArcsec = 0.0;
+    double dynamicDoneThresholdArcsec = 0.0;
+    double measurementNoiseArcsec = 0.0;
+    double driftPxPerSec = 0.0;
+    PolarGuidanceTransformModel transformModel = PolarGuidanceTransformModel::NONE;
+    qint64 reanchorStartedMs = 0;
+    qint64 lastReanchorMs = 0;
+};
+
+// 极轴校准结果结构 - 存储校准的最终结果
+struct PolarAlignmentResult {
+    double raDeviation;     // 赤经偏差（度）- 极轴在赤经方向的偏差角度
+    double decDeviation;    // 赤纬偏差（度）- 极轴在赤纬方向的偏差角度
+    double totalDeviation;  // 总偏差（度）- 极轴的总偏差角度
+    bool isSuccessful;      // 是否成功 - 校准是否成功完成
+    QString errorMessage;    // 错误信息 - 如果失败，记录错误原因
+    QVector<SloveResults> measurements; // 测量结果 - 存储三次测量的详细数据
+};
+
+// 调整指导数据结构 - 存储adjustmentGuideData发送的信息
+struct AdjustmentGuideData {
+    double ra;              // 当前RA位置
+    double dec;             // 当前DEC位置
+
+    double ra0; double dec0;
+    double ra1; double dec1;
+    double ra2; double dec2;
+    double ra3; double dec3;
+
+    double targetRa;        // 目标RA
+    double targetDec;       // 目标DEC
+    double offsetRa;        // RA偏移
+    double offsetDec;       // DEC偏移
+    QString adjustmentRa;   // 调整指导RA
+    QString adjustmentDec;  // 调整指导DEC
+    double fakePolarRA;     // 假极轴RA
+    double fakePolarDEC;    // 假极轴DEC
+    double realPolarRA;     // 真极轴RA
+    double realPolarDEC;    // 真极轴DEC
+    
+    QDateTime timestamp;    // 时间戳
+    
+    // 地平坐标系数据
+    double azimuth;         // 当前方位角（度）
+    double altitude;        // 当前高度角（度）
+    double targetAzimuth;   // 目标方位角（度）
+    double targetAltitude;  // 目标高度角（度）
+    double azimuthDeviation;   // 方位角偏差（度）
+    double altitudeDeviation;  // 高度角偏差（度）
+    QString adjustmentAzimuth;  // 方位角调整指导
+    QString adjustmentAltitude; // 高度角调整指导
+    
+    AdjustmentGuideData() : ra(0.0), dec(0.0),
+                           ra0(0.0), dec0(0.0), ra1(0.0), dec1(0.0), ra2(0.0), dec2(0.0), ra3(0.0), dec3(0.0),
+                            targetRa(0.0), targetDec(0.0),
+                           offsetRa(0.0), offsetDec(0.0), fakePolarRA(0.0), fakePolarDEC(0.0),
+                           realPolarRA(0.0), realPolarDEC(0.0), azimuth(0.0), altitude(0.0),
+                           targetAzimuth(0.0), targetAltitude(0.0), azimuthDeviation(0.0),
+                           altitudeDeviation(0.0) {}
+};
+
+// 极轴校准配置结构 - 定义校准过程中的各种参数
+struct PolarAlignmentConfig {
+    int defaultExposureTime = 1000;    // 默认曝光时间（毫秒）- 正常拍摄的曝光时间
+    int recoveryExposureTime = 5000;   // 恢复曝光时间（毫秒）- 分析失败时使用的较长曝光时间
+    double raRotationAngle = 15.0;     // RA轴旋转角度（度）- 每次RA轴移动的角度
+    double decRotationAngle = 10.0;    // DEC轴旋转角度（度）- DEC轴从极点移开的角度
+    int maxRetryAttempts = 3;          // 最大重试次数 - 分析失败时的最大重试次数
+    int captureAndAnalysisTimeout = 30000; // 拍摄和分析超时时间（毫秒）
+    int movementTimeout = 120000;       // 移动超时时间（毫秒）- 望远镜移动的最大等待时间
+    int maxAdjustmentAttempts = 5;     // 最大调整尝试次数 - 向内调整的最大次数
+    double adjustmentAngleReduction = 0.5; // 调整角度缩减比例 - 每次调整后角度减半
+    double cameraWidth = 0; // 相机传感器宽度（毫米）
+    double cameraHeight = 0; // 相机传感器高度（毫米）
+    int focalLength = 0; // 焦距（毫米）
+    double latitude = 0.0; // 观测地点纬度（度）- 正值表示北半球，负值表示南半球
+    double longitude = 0.0; // 观测地点经度（度）
+    double finalVerificationThreshold = 0.5; // 最终验证精度阈值（度）
+    double polarPointThreshold = 55.0; // 极点判断阈值（度）- DEC在极点附近多少度内认为在极点附近
+    // 调整建议分段与平滑切换参数
+    double smallDeviationThresholdDeg = 1.0; // 小偏差阈值（度）- 倾向雅可比法
+    double largeDeviationThresholdDeg = 5.0; // 大偏差阈值（度）- 倾向非线性法
+    // 解析模式选择阈值（可调）
+    double solveMode2MaxOffsetDeg = 5.0;  // 模式2：RA/DEC 窗口最大偏移（度）
+    double solveMode1MaxOffsetDeg = 12.0; // 模式1：允许的RA/DEC 偏移（度）
+};
+
+/**
+ * @brief 自动极轴校准类
+ * 
+ * 该类实现了完整的自动极轴校准流程，包括：
+ * - 三次不同位置的图像拍摄和分析
+ * - 严格几何法极轴偏差计算（同一切平面 + 指数/对数映射）
+ * - 传统方法作为备选方案
+ * - 错误恢复机制
+ * - 用户指导调整
+ * - 算法验证和性能测试
+ * 
+ * 严格几何法特点：
+ * - 使用等角投影将球面坐标映射到切平面
+ * - 在切平面中计算几何中心作为极轴偏差
+ * - 提供置信度评估
+ * - 对测量误差更鲁棒
+ * - 符合天球几何的数学原理
+ */
+class PolarAlignment : public QObject
+{
+    Q_OBJECT
+
+public:
+    /**
+     * @brief 构造函数
+     * @param indiServer INDI服务器客户端
+     * @param dpMount 望远镜设备指针
+     * @param dpCaptureCamera 拍摄设备指针（主相机或导星）
+     * @param mainWindow 主窗口指针，用于访问拍摄状态
+     * @param parent 父对象指针
+     */
+    /**
+     * @brief 构造函数（兼容“单设备SDK连接”）
+     * @param indiServer INDI服务器客户端
+     * @param dpMount    赤道仪（INDI）
+     * @param dpCaptureCamera 拍摄设备（INDI，若走 SDK 可为空）
+     * @param useSdkCaptureSource 拍摄设备是否走 SDK（单设备维度）
+     * @param captureCameraRole 设备角色（MainCamera/Guider）
+     */
+    explicit PolarAlignment(MyClient* indiServer,
+                            INDI::BaseDevice* dpMount,
+                            INDI::BaseDevice* dpCaptureCamera,
+                            bool useSdkCaptureSource,
+                            const QString &captureCameraRole = "MainCamera",
+                            QObject *parent = nullptr);
+    
+    /**
+     * @brief 析构函数
+     */
+    ~PolarAlignment();
+
+    // ==================== 主要接口函数 ====================
+    
+    /**
+     * @brief 开始极轴校准
+     * @return 是否成功启动校准流程
+     */
+    bool startPolarAlignment();
+    
+    /**
+     * @brief 停止极轴校准
+     * 立即停止当前校准流程，清理所有状态
+     */
+    void stopPolarAlignment();
+    
+    /**
+     * @brief 用户确认调整完成
+     * 在指导调整循环中调用，表示用户确认调整完成
+     */
+    void userConfirmAdjustment();
+    
+    /**
+     * @brief 用户取消校准
+     * 在指导调整循环中调用，表示用户取消校准
+     */
+    void userCancelAlignment();
+    
+    /**
+     * @brief 暂停极轴校准
+     * 暂停当前校准流程，保持当前状态
+     */
+    void pausePolarAlignment();
+    
+    /**
+     * @brief 恢复极轴校准
+     * 从暂停状态恢复校准流程
+     */
+    void resumePolarAlignment();
+
+    /**
+     * @brief 设置拍摄结束状态
+     * @param isEnd 是否结束
+     */
+    void setCaptureEnd(bool isEnd, quint64 captureId = 0);
+    bool setCapturedImagePath(const QString &fitsPath, quint64 captureId = 0);
+    
+    // ==================== 状态查询函数 ====================
+    
+    /**
+     * @brief 获取当前校准状态
+     * @return 当前的状态枚举值
+     */
+    PolarAlignmentState getCurrentState() const;
+    
+    /**
+     * @brief 获取当前状态消息
+     * @return 当前状态消息
+     */
+    QString getCurrentStatusMessage() const;
+
+    /**
+     * @brief 获取当前进度百分比
+     * @return 当前进度百分比
+     */
+    int getProgressPercentage() const;
+
+    /**
+     * @brief 检查校准是否正在运行
+     * @return 是否正在运行
+     */
+    bool isRunning() const;
+    
+    /**
+     * @brief 检查校准是否已完成
+     * @return 是否已完成
+     */
+    bool isCompleted() const;
+    
+    /**
+     * @brief 检查校准是否失败
+     * @return 是否失败
+     */
+    bool isFailed() const;
+    
+    // ==================== 结果获取函数 ====================
+    
+    /**
+     * @brief 获取校准结果
+     * @return 校准结果结构体
+     */
+    PolarAlignmentResult getResult() const;
+    
+    
+    // ==================== 配置设置函数 ====================
+    
+    /**
+     * @brief 设置校准配置参数
+     * @param config 配置结构体
+     */
+    void setConfig(const PolarAlignmentConfig& config);
+    
+    // ==================== 调整指导数据管理函数 ====================
+    
+    /**
+     * @brief 发送满足条件的调整指导数据
+     * 发送所有offsetRa和offsetDec都为0的数据，以及最后一个星点的数据
+     */
+    void sendValidAdjustmentGuideData();
+    
+    /**
+     * @brief 清空调整指导数据容器
+     */
+    void clearAdjustmentGuideData();
+    void emitGuidanceSolveStats();
+    
+    /**
+     * @brief 保存并发送调整指导数据（智能管理：最多3个校准点+1个解析数据）
+     * @param ra 当前RA位置
+     * @param dec 当前DEC位置
+     * @param maxRa 最大RA
+     * @param minRa 最小RA
+     * @param maxDec 最大DEC
+     * @param minDec 最小DEC
+     * @param targetRa 目标RA
+     * @param targetDec 目标DEC
+     * @param offsetRa RA偏移
+     * @param offsetDec DEC偏移
+     * @param adjustmentRa 调整指导RA
+     * @param adjustmentDec 调整指导DEC
+     * @param fakePolarRA 假极轴RA
+     * @param fakePolarDEC 假极轴DEC
+     * @param realPolarRA 真极轴RA
+     * @param realPolarDEC 真极轴DEC
+     */
+    void saveAndEmitAdjustmentGuideData(double ra, double dec,
+                                       double ra0, double dec0, double ra1, double dec1,
+                                       double ra2, double dec2, double ra3, double dec3,
+                                       double targetRa, double targetDec,
+                                       double offsetRa, double offsetDec, QString adjustmentRa, QString adjustmentDec,
+                                       double fakePolarRA, double fakePolarDEC, double realPolarRA, double realPolarDEC);
+    
+    /**
+     * @brief 添加调整指导数据（已废弃，请使用saveAndEmitAdjustmentGuideData）
+     * @param data 要添加的调整指导数据
+     */
+    void addAdjustmentGuideData(const AdjustmentGuideData& data);
+    
+    /**
+     * @brief 获取调整指导数据容器的大小
+     * @return 数据条数
+     */
+    int getAdjustmentGuideDataCount() const;
+    
+    /**
+     * @brief 重新发送所有保存的调整指导数据
+     * 根据保存的完整数据重新发送所有信号
+     */
+    void resendAllAdjustmentGuideData();
+    
+
+signals:
+    /**
+     * @brief 状态改变信号
+     * @param newState 新的状态
+     * @param message 状态消息
+     * @param percentage 进度百分比
+     */
+    void stateChanged(PolarAlignmentState newState, QString message, int percentage);
+    
+    
+    /**
+     * @brief 调整指导数据
+     * @param ra 当前RA
+     * @param dec 当前DEC
+     * @param maxRa 最大RA
+     * @param minRa 最小RA
+     * @param maxDec 最大DEC
+     * @param minDec 最小DEC
+     * @param targetRa 目标RA
+     * @param targetDec 目标DEC
+     * @param offsetRa RA偏移
+     * @param offsetDec DEC偏移
+     * @param adjustmentRa 调整指导RA
+     * @param adjustmentDec 调整指导DEC
+     * @param fakePolarRA 假极轴RA
+     * @param fakePolarDEC 假极轴DEC
+     * @param realPolarRA 真极轴RA
+     * @param realPolarDEC 真极轴DEC
+     */
+    void adjustmentGuideData(double ra, double dec,
+                           double ra0, double dec0, double ra1, double dec1,
+                           double ra2, double dec2, double ra3, double dec3,
+                           double targetRa, double targetDec, double offsetRa, double offsetDec,
+                           QString adjustmentRa, QString adjustmentDec,
+                           double fakePolarRA, double fakePolarDEC, double realPolarRA, double realPolarDEC);
+
+    /**
+     * @brief 结果就绪信号
+     * @param result 校准结果
+     */
+    void resultReady(PolarAlignmentResult result);
+    
+    /**
+     * @brief 错误发生信号
+     * @param error 错误信息
+     */
+    void errorOccurred(QString error);
+    
+    /**
+     * @brief 调整阶段进度信号 - 通知VUE端当前指导调整阶段执行到哪一步
+     * @param step 当前步骤
+     * @param message 步骤描述信息
+     * @param starCount 识别的星点数量（仅在CHECKING_STARS步骤时有效，-1表示未检测）
+     */
+    void guidanceAdjustmentStepProgress(GuidanceAdjustmentStep step, QString message, int starCount = -1);
+    void guidanceSolveStatsChanged(int successCount, int totalCount);
+
+    void polarImageGuidanceDataV2(QString payloadJson);
+    void polarImageGuidanceFrame(qint64 frameId,
+                                 int imageW,
+                                 int imageH,
+                                 QString jpegBase64);
+
+    /**
+     * @brief 请求主线程触发一次拍摄（兼容 SDK / INDI）
+     * @param exposureTimeMs 曝光时间（毫秒）
+     *
+     * 说明：
+     * - INDI 模式下 PolarAlignment 也可以直接调用 indiServer->takeExposure；
+     * - SDK 模式下拍摄设备 INDI 指针可能为空，此时通过该信号让 MainWindow 调用统一入口拍摄。
+     */
+    void requestCaptureForRole(QString cameraRole, int exposureTimeMs, quint64 captureId);
+
+private slots:
+    /**
+     * @brief 状态定时器超时处理
+     * 处理状态转换和流程控制
+     */
+    void onStateTimerTimeout();
+    
+    /**
+     * @brief 拍摄和分析定时器超时处理
+     * 处理图像拍摄和分析超时
+     */
+    void onCaptureAndAnalysisTimerTimeout();
+    
+    /**
+     * @brief 移动定时器超时处理
+     * 处理望远镜移动超时
+     */
+    void onMovementTimerTimeout();
+
+private:
+    // ==================== 状态管理函数 ====================
+    
+    /**
+     * @brief 设置新的校准状态
+     * @param newState 新的状态
+     */
+    void setState(PolarAlignmentState newState);
+    
+    /**
+     * @brief 处理当前状态
+     * 根据当前状态执行相应的处理逻辑
+     */
+    void processCurrentState();
+    
+    // ==================== 主要流程函数 ====================
+    
+    // 极点检查结果结构体
+    struct PolarPointCheckResult {
+        bool success;        // 检查是否成功
+        bool isNearPole;     // 是否在极点附近
+        QString errorMessage; // 错误信息（如果失败）
+    };
+    
+    /**
+     * @brief 检查是否在极点附近
+     * @param dec 赤纬角度（度）
+     * @return 是否在极点附近
+     */
+    bool isNearPolarPoint(double dec);
+    
+    /**
+     * @brief 检查极点位置
+     * @return 极点检查结果
+     */
+    PolarPointCheckResult checkPolarPoint();
+    
+    /**
+     * @brief 移动DEC轴脱离极点
+     * @return 是否成功移动
+     */
+    bool moveDecAxisAway();
+    
+    /**
+     * @brief DEC轴避障移动（专门用于避障）
+     * @return 是否成功移动
+     */
+    bool moveDecAxisForObstacleAvoidance();
+    
+    /**
+     * @brief 拍摄并分析图像
+     * @param attempt 尝试次数（1为正常，2为恢复）
+     * @return 是否成功
+     */
+    bool captureAndAnalyze(int attempt = 1);
+    
+    /**
+     * @brief 移动RA轴
+     * @return 是否成功移动
+     */
+    bool moveRAAxis();
+    
+    /**
+     * @brief 避开遮挡移动（通用）
+     * @return 是否成功移动
+     */
+    bool moveToAvoidObstacle();
+    
+    
+    /**
+     * @brief 第一次RA轴避障移动
+     * @return 是否成功移动
+     */
+    bool moveToAvoidObstacleRA1();
+    
+    /**
+     * @brief 第二次RA轴避障移动
+     * @return 是否成功移动
+     */
+    bool moveToAvoidObstacleRA2();
+    
+    /**
+     * @brief 计算极轴偏差
+     * @return 是否成功计算
+     */
+    bool calculateDeviation();
+    
+    /**
+     * @brief 指导用户调整
+     * @return 是否完成调整
+     */
+    bool guideUserAdjustment();
+    
+    /**
+     * @brief 执行最终验证
+     * @return 是否验证成功
+     */
+    bool performFinalVerification();
+    
+    /**
+     * @brief 执行一次指导阶段的重算与信号发送
+     * 在 GUIDING_ADJUSTMENT 状态下调用，完成一次拍摄解析→偏差重算→UI 通知→达标判定→状态流转。
+     * @return 是否成功执行本次指导步骤
+     */
+    bool performGuidanceAdjustmentStep();
+    bool processPolarImageGuidance(const cv::Mat& image, const SloveResults& solveResult);
+    bool extractStarsWithImage2xy(const QString& fitsPath) const;
+    
+    /**
+     * @brief 生成调整指导信息
+     * @param adjustmentRa 调整指导RA
+     * @param adjustmentDec 调整指导DEC
+     * @return 调整指导字符串
+     */
+    QString generateAdjustmentGuide(QString &adjustmentRa, QString &adjustmentDec);
+    
+    /**
+     * @brief 调整避开遮挡物
+     * @return 是否调整成功
+     */
+    bool adjustForObstacle();
+    
+    /**
+     * @brief 检查是否为初次拍摄失败
+     * @return 是否为初次拍摄
+     */
+    bool isFirstCaptureFailure();
+    
+    /**
+     * @brief 处理移动后失败
+     * @return 是否处理成功
+     */
+    bool handlePostMovementFailure();
+
+    // ==================== 图像内引导辅助函数 ====================
+    void resetPolarImageGuidanceState();
+    bool loadGuideStarsFromAxy(const QString& fitsPath,
+                               std::vector<PolarImageGuidePoint>& stars,
+                               int imageW,
+                               int imageH) const;
+    std::vector<PolarImageGuidePoint> detectGuideStars(const cv::Mat& imageGray8) const;
+    bool selectSingleGuideStar(const std::vector<PolarImageGuidePoint>& stars,
+                               int imageW, int imageH,
+                               PolarImageGuidePoint& selected) const;
+    bool trackSingleGuideStar(const std::vector<PolarImageGuidePoint>& stars,
+                              const PolarImageGuidePoint& prev,
+                              PolarImageGuidePoint& tracked,
+                              double maxDistPx,
+                              const cv::Mat& currentGray8);
+    bool updateMultiStarFallback(const std::vector<PolarImageGuidePoint>& currentStars,
+                                 const std::vector<PolarImageGuidePoint>& previousStars,
+                                 cv::Mat& transform,
+                                 int& inlierCount) const;
+    bool computeTargetPixelFromSolve(const SloveResults& s,
+                                     int imageW, int imageH,
+                                     double targetRaDeg, double targetDecDeg,
+                                     cv::Point2d& outTargetPx,
+                                     double& outReprojErrPx);
+    bool buildGuidanceJpegFrame(const cv::Mat& rawImage, QByteArray& outJpegBase64, int& outW, int& outH) const;
+    QString polarImageGuidanceModeToToken(PolarImageGuidanceMode mode) const;
+    QString polarGuidanceTransformModelToToken(PolarGuidanceTransformModel model) const;
+    bool isPointNearOrOutsideEdge(const cv::Point2d& p, int w, int h, double marginRatio) const;
+    bool buildStarCorrespondenceCandidates(const std::vector<PolarImageGuidePoint>& previousStars,
+                                           const std::vector<PolarImageGuidePoint>& currentStars,
+                                           double maxDistPx,
+                                           std::vector<cv::Point2f>& src,
+                                           std::vector<cv::Point2f>& dst) const;
+    bool estimateGlobalTransformRobust(const std::vector<PolarImageGuidePoint>& previousStars,
+                                       const std::vector<PolarImageGuidePoint>& currentStars,
+                                       cv::Mat& transform,
+                                       PolarGuidanceTransformModel& model,
+                                       int& inlierCount,
+                                       double& inlierRatio,
+                                       double& reprojErrPx) const;
+    bool propagateTargetsByTransform(const cv::Mat& transform, cv::Point2d& point) const;
+    bool refineLockByLocalTrack(const std::vector<PolarImageGuidePoint>& stars,
+                                const cv::Mat& currentGray8,
+                                double maxDistPx,
+                                PolarImageGuidePoint& tracked);
+    void loadGuidanceTrackingConfigFromEnv();
+    QString buildPolarGuidanceDataV2Payload(qint64 frameId,
+                                            const QString& mode,
+                                            double arcsecPerPixel,
+                                            const QString& statusText,
+                                            const cv::Point2d& arrow,
+                                            double remainArcsec,
+                                            double segmentRemainArcsec) const;
+
+    void loadGuidanceSolveConfigFromEnv();
+    
+    // ==================== 设备操作函数 ====================
+    
+    /**
+     * @brief 拍摄图像
+     * @param exposureTime 曝光时间（毫秒）
+     * @return 是否成功
+     */
+    bool captureImage(int exposureTime);
+    
+    /**
+     * @brief 智能选择最佳的解析模式
+     * @return 解析模式 (0=基础模式, 1=视场模式, 2=高精度模式)
+     */
+    int selectOptimalSolveMode();
+    
+    /**
+     * @brief 根据本次解析结果更新解析模式统计信息
+     * @param solveSucceeded 本次解析是否成功
+     */
+    void updateSolveModeStatistics(bool solveSucceeded);
+    
+    /**
+     * @brief 计算球面两点间的角距离
+     * @param ra1 第一点的赤经（度）
+     * @param dec1 第一点的赤纬（度）
+     * @param ra2 第二点的赤经（度）
+     * @param dec2 第二点的赤纬（度）
+     * @return 角距离（度）
+     */
+    double calculateSphericalDistance(double ra1, double dec1, double ra2, double dec2);
+    
+    /**
+     * @brief 解析图像
+     * @param imageFile 图像文件路径
+     * @param result 解析结果
+     * @return 是否成功
+     */
+    bool solveImage(const QString& imageFile);
+    
+    /**
+     * @brief 移动望远镜到相对位置
+     * @param ra RA偏移量（度）
+     * @param dec DEC偏移量（度）
+     * @return 是否成功
+     */
+    bool moveTelescope(double ra, double dec);
+
+    /**
+     * @brief 移动望远镜到绝对位置
+     * @param ra RA位置（度）
+     * @param dec DEC位置（度）
+     * @return 是否成功
+     */
+    bool moveTelescopeToAbsolutePosition(double ra, double dec);
+    
+    /**
+     * @brief 等待拍摄完成
+     * @return 是否成功完成
+     */
+    bool waitForCaptureComplete();
+
+    /**
+     * @brief 获取拍摄结束状态
+    
+    /**
+     * @brief 等待解析完成
+     * @return 是否成功完成
+     */
+    bool waitForSolveComplete();
+    
+    /**
+     * @brief 等待移动完成
+     * @return 是否成功完成
+     */
+    bool waitForMovementComplete();
+    
+    // ==================== 辅助函数 ====================
+    
+    /**
+     * @brief 检查分析结果是否成功
+     * @param result 分析结果
+     * @return 是否成功
+     */
+    bool isAnalysisSuccessful(const SloveResults& result);
+    
+    /**
+     * @brief 处理分析失败
+     * @param attempt 当前尝试次数
+     */
+    void handleAnalysisFailure(int attempt);
+    
+    /**
+     * @brief 处理严重失败
+     * 当多次尝试都失败时调用
+     */
+    void handleCriticalFailure();
+    
+    
+    // ==================== 数学计算函数 ====================
+    
+    // 坐标转换结构体
+    struct CartesianCoordinates {
+        double x, y, z;
+    };
+    
+    struct SphericalCoordinates {
+        double ra, dec;
+    };
+    
+    // 严格几何法相关结构体
+    struct TangentPlaneCoordinates {
+        double u, v;  // 切平面坐标
+    };
+    
+    struct GeometricAlignmentResult {
+        double azimuthDeviation;    // 方位角偏差（度）
+        double altitudeDeviation;   // 高度角偏差（度）
+        double confidence;          // 计算置信度 (0-1)
+        bool isValid;              // 结果是否有效
+        QString errorMessage;      // 错误信息
+        double fakePolarRA;        // 假极轴RA（度）
+        double fakePolarDEC;       // 假极轴DEC（度）
+    };
+    
+    /**
+     * @brief 将赤道坐标转换为笛卡尔坐标
+     * @param ra 赤经（度）
+     * @param dec 赤纬（度）
+     * @param radius 半径（默认1.0）
+     * @return 笛卡尔坐标
+     */
+    CartesianCoordinates equatorialToCartesian(double ra, double dec, double radius = 1.0);
+    
+    /**
+     * @brief 将笛卡尔坐标转换为赤道坐标
+     * @param cart 笛卡尔坐标
+     * @return 赤道坐标
+     */
+    SphericalCoordinates cartesianToEquatorial(const CartesianCoordinates& cart);
+    
+    /**
+     * @brief 计算向量叉积
+     * @param v1 第一个向量
+     * @param v2 第二个向量
+     * @return 叉积结果
+     */
+    CartesianCoordinates crossProduct(const CartesianCoordinates& v1, const CartesianCoordinates& v2);
+    
+    /**
+     * @brief 计算向量长度
+     * @param v 向量
+     * @return 向量长度
+     */
+    double vectorLength(const CartesianCoordinates& v);
+    
+    /**
+     * @brief 归一化向量
+     * @param v 向量
+     * @return 归一化后的向量
+     */
+    CartesianCoordinates normalizeVector(const CartesianCoordinates& v);
+    
+    /**
+     * @brief 计算角度差（考虑循环性）
+     * @param angle1 第一个角度
+     * @param angle2 第二个角度
+     * @return 角度差
+     */
+    double calculateAngleDifference(double angle1, double angle2);
+    
+    /**
+     * @brief 正确的三点极轴校准算法
+     * @param pos1 第一个测量点
+     * @param pos2 第二个测量点
+     * @param pos3 第三个测量点
+     * @param azimuthDeviation 方位角偏差（输出）
+     * @param altitudeDeviation 高度角偏差（输出）
+     * @return 是否计算成功
+     */
+    bool calculatePolarDeviationCorrect(const SloveResults& pos1, const SloveResults& pos2, const SloveResults& pos3,
+                                       GeometricAlignmentResult& result);
+    
+    // ==================== 严格几何法函数 ====================
+    
+    /**
+     * @brief 严格几何法三点极轴校准算法（同一切平面 + 指数/对数映射）
+     * @param pos1 第一个测量点
+     * @param pos2 第二个测量点
+     * @param pos3 第三个测量点
+     * @param result 几何校准结果（输出）
+     * @return 是否计算成功
+     */
+    bool calculatePolarDeviationGeometric(const SloveResults& pos1, const SloveResults& pos2, const SloveResults& pos3,
+                                         GeometricAlignmentResult& result);
+    
+    /**
+     * @brief 将球面坐标投影到切平面（指数映射）
+     * @param ra 赤经（度）
+     * @param dec 赤纬（度）
+     * @param poleRa 极点赤经（度）
+     * @param poleDec 极点赤纬（度）
+     * @return 切平面坐标
+     */
+    TangentPlaneCoordinates projectToTangentPlane(double ra, double dec, double poleRa, double poleDec);
+    
+    /**
+     * @brief 将切平面坐标映射回球面（对数映射）
+     * @param tangentCoords 切平面坐标
+     * @param poleRa 极点赤经（度）
+     * @param poleDec 极点赤纬（度）
+     * @return 球面坐标
+     */
+    SphericalCoordinates projectFromTangentPlane(const TangentPlaneCoordinates& tangentCoords, 
+                                                double poleRa, double poleDec);
+    
+    /**
+     * @brief 计算切平面中的极轴偏差
+     * @param tangentPoints 三个测量点在切平面中的坐标
+     * @param result 几何校准结果（输出）
+     * @return 是否计算成功
+     */
+    bool calculateDeviationInTangentPlane(const QVector<TangentPlaneCoordinates>& tangentPoints,
+                                         GeometricAlignmentResult& result);
+    
+    /**
+     * @brief 计算切平面中三点形成的三角形的几何中心
+     * @param p1 第一个点
+     * @param p2 第二个点
+     * @param p3 第三个点
+     * @return 几何中心坐标
+     */
+    TangentPlaneCoordinates calculateGeometricCenter(const TangentPlaneCoordinates& p1,
+                                                    const TangentPlaneCoordinates& p2,
+                                                    const TangentPlaneCoordinates& p3);
+    
+    /**
+     * @brief 计算切平面中两点的距离
+     * @param p1 第一个点
+     * @param p2 第二个点
+     * @return 距离
+     */
+    double calculateTangentPlaneDistance(const TangentPlaneCoordinates& p1,
+                                        const TangentPlaneCoordinates& p2);
+    
+    /**
+     * @brief 计算切平面中三点形成的三角形的面积
+     * @param p1 第一个点
+     * @param p2 第二个点
+     * @param p3 第三个点
+     * @return 三角形面积
+     */
+    double calculateTriangleArea(const TangentPlaneCoordinates& p1,
+                                const TangentPlaneCoordinates& p2,
+                                const TangentPlaneCoordinates& p3);
+    
+    /**
+     * @brief 计算几何校准的置信度
+     * @param tangentPoints 切平面中的三个测量点
+     * @param deviation 计算出的偏差
+     * @return 置信度 (0-1)
+     */
+    double calculateGeometricConfidence(const QVector<TangentPlaneCoordinates>& tangentPoints,
+                                      const TangentPlaneCoordinates& deviation);
+    
+    
+    // ==================== 坐标转换函数 ====================
+    
+    /**
+     * @brief 将赤道坐标转换为地平坐标
+     * @param ra 赤经（度）
+     * @param dec 赤纬（度）
+     * @param latitude 观测地纬度（度）
+     * @param longitude 观测地经度（度）
+     * @param azimuth 输出方位角（度）
+     * @param altitude 输出高度角（度）
+     * @return 是否转换成功
+     */
+    bool convertEquatorialToHorizontal(double ra, double dec, double latitude, double longitude,
+                                     double& azimuth, double& altitude);
+    
+    /**
+     * @brief 将地平坐标转换为赤道坐标
+     * @param azimuth 方位角（度）
+     * @param altitude 高度角（度）
+     * @param latitude 观测地纬度（度）
+     * @param longitude 观测地经度（度）
+     * @param ra 输出赤经（度）
+     * @param dec 输出赤纬（度）
+     * @return 是否转换成功
+     */
+    bool convertHorizontalToEquatorial(double azimuth, double altitude, double latitude, double longitude,
+                                     double& ra, double& dec);
+    
+    /**
+     * @brief 获取当前地平坐标
+     * @param azimuth 输出方位角（度）
+     * @param altitude 输出高度角（度）
+     * @return 是否获取成功
+     */
+    bool getCurrentHorizontalCoordinates(double& azimuth, double& altitude);
+    
+    /**
+     * @brief 获取观测者位置信息
+     * @param latitude 输出纬度（度）
+     * @param longitude 输出经度（度）
+     * @param elevation 输出海拔（米）
+     * @return 是否获取成功
+     */
+    bool getObserverLocation(double& latitude, double& longitude, double& elevation);
+    
+    /**
+     * @brief 将赤经赤纬坐标转换为地平坐标
+     * @param ra_hours 赤经（小时）
+     * @param dec_degrees 赤纬（度）
+     * @param observer_lat 观测地纬度（度）
+     * @param observer_lon 观测地经度（度）
+     * @param azimuth 输出方位角（度）
+     * @param altitude 输出高度角（度）
+     * @return 是否转换成功
+     */
+    bool convertRADECToHorizontal(double ra_hours, double dec_degrees,
+                                 double observer_lat, double observer_lon,
+                                 double& azimuth, double& altitude);
+
+    /**
+     * @brief 计算极轴校准的机械调整量
+     * @param raDeviation RA偏差（度）
+     * @param decDeviation DEC偏差（度）
+     * @param observerLat 观测地纬度（度）
+     * @param observerLon 观测地经度（度）
+     * @param azimuthAdjustment 输出方位角调整量（度）
+     * @param altitudeAdjustment 输出高度角调整量（度）
+     * @return 是否计算成功
+     */
+    bool calculatePolarAlignmentAdjustment(double raDeviation, double decDeviation,
+                                         double observerLat, double observerLon,
+                                         double& azimuthAdjustment, double& altitudeAdjustment);
+    
+    /**
+     * @brief 计算总偏差
+     * @param raDev RA偏差
+     * @param decDev DEC偏差
+     * @return 总偏差角度
+     */
+    double calculateTotalDeviation(double raDev, double decDev);
+    
+    /**
+     * @brief 重新计算假极轴位置
+     * @param fakePolarRA 输出假极轴RA
+     * @param fakePolarDEC 输出假极轴DEC
+     * @param currentRA 当前RA位置
+     * @param currentDEC 当前DEC位置
+     * @param result 校准结果
+     * @return 是否成功计算
+     */
+    bool recalculateFakePolarPosition(double& fakePolarRA, double& fakePolarDEC, 
+                                     double currentRA, double currentDEC, 
+                                     const PolarAlignmentResult& result);
+    
+    /**
+     * @brief 归一化角度到0-360度范围
+     * @param angle 输入角度（度）
+     * @return 归一化后的角度（度）
+     */
+    double normalizeAngle360(double angle);
+    
+    /**
+     * @brief 归一化角度到-180到180度范围
+     * @param angle 输入角度（度）
+     * @return 归一化后的角度（度）
+     */
+    double normalizeAngle180(double angle);
+    
+    // ==================== 地理位置相关函数 ====================
+    
+    /**
+     * @brief 根据地理位置计算期望的极点位置
+     * @param expectedRA 输出参数：期望的RA值
+     * @param expectedDEC 输出参数：期望的DEC值
+     * @return 是否成功计算
+     */
+    bool calculateExpectedPolarPosition(double& expectedRA, double& expectedDEC);
+    
+    /**
+     * @brief 根据当前时间和地理位置计算精确的极点坐标
+     * @param expectedRA 输出参数：期望的RA值
+     * @param expectedDEC 输出参数：期望的DEC值
+     * @return 是否成功计算
+     */
+    bool calculatePrecisePolarPosition(double& expectedRA, double& expectedDEC);
+    
+    /**
+     * @brief 判断当前是否在北半球
+     * @return 是否在北半球
+     */
+    bool isNorthernHemisphere() const;
+    
+    // ==================== 天文计算辅助函数 ====================
+    
+    /**
+     * @brief 计算儒略日
+     * @param year 年
+     * @param month 月
+     * @param day 日
+     * @param hour 时
+     * @param minute 分
+     * @param second 秒
+     * @return 儒略日
+     */
+    double calculateJulianDay(int year, int month, int day, int hour, int minute, int second);
+    
+    /**
+     * @brief 计算格林尼治恒星时
+     * @param jd 儒略日
+     * @return 格林尼治恒星时（度）
+     */
+    double calculateGreenwichSiderealTime(double jd);
+    
+    // ==================== 成员变量 ====================
+    
+    // 设备指针
+    MyClient* indiServer;           // INDI服务器客户端
+    INDI::BaseDevice* dpMount;      // 望远镜设备指针
+    INDI::BaseDevice* dpCaptureCamera; // 拍摄设备指针（主相机/导星）
+    bool useSdkCaptureSource{false};   // 单设备：当前拍摄源是否使用 SDK 通路
+    QString captureCameraRole{"MainCamera"};
+    
+    PolarAlignmentState currentState;    // 当前校准状态
+    PolarAlignmentState obstacleFromState; // 避开遮挡前的状态
+    
+    // 避障相关变量
+    double initialRA;                    // 初始RA位置（用于RA避障）
+    double initialDEC;                   // 初始DEC位置（用于DEC避障）
+    bool ra1ObstacleAvoided;             // 第一次RA轴是否已进行避障
+    bool ra2ObstacleAvoided;             // 第二次RA轴是否已进行避障
+    bool justCompletedObstacleAvoidance; // 是否刚刚完成避障（用于避免RA角度调整）
+    PolarAlignmentConfig config;         // 校准配置参数
+    PolarAlignmentResult result;         // 校准结果
+    
+    // 测量数据
+    QVector<SloveResults> measurements; // 测量结果数组
+    int currentMeasurementIndex;         // 当前测量索引
+    int currentAdjustmentAttempt;        // 当前调整尝试次数
+    double currentRAAngle;              // 当前RA角度
+    double currentDECAngle;             // 当前DEC角度
+    
+    // 定时器
+    QTimer stateTimer;      // 状态处理定时器
+    QTimer captureAndAnalysisTimer; // 拍摄和分析超时定时器
+    QTimer movementTimer;   // 移动超时定时器
+    
+    // 线程安全
+    mutable QMutex stateMutex;  // 状态互斥锁
+    mutable QMutex resultMutex; // 结果互斥锁
+    
+    // 状态变量
+    bool isRunningFlag;         // 是否正在运行
+    bool isPausedFlag;          // 是否已暂停
+    bool userAdjustmentConfirmed; // 用户是否确认调整完成
+    QString currentStatusMessage; // 当前状态消息
+    int progressPercentage;      // 进度百分比
+    
+
+    
+    // 临时数据
+    double currentRAPosition;    // 当前RA位置
+    double currentDECPosition;   // 当前DEC位置
+    
+    // 当前解析结果数据
+    SloveResults currentSolveResult;    // 当前解析成功后的完整数据
+    
+    // 拍摄和解析状态
+    bool isCaptureEnd;           // 拍摄是否结束
+    bool isSolveEnd;             // 解析是否结束
+    QString lastCapturedImage;   // 最后拍摄的图像文件
+    QString latestCapturePathFromHost; // 主线程回传的本次真实 FITS 路径
+    quint64 captureRequestSequence = 0;
+    quint64 activeCaptureRequestId = 0;
+    bool capturePathAcceptedForRequest = false;
+    
+    // 失败计数
+    int captureFailureCount;     // 拍摄失败计数
+    int solveFailureCount;       // 解析失败计数
+    int firstCaptureAvoidanceCount;  // 第一次拍摄避障次数计数
+    int secondCaptureAvoidanceCount; // 第二次拍摄避障次数计数
+    int thirdCaptureAvoidanceCount;  // 第三次拍摄避障次数计数
+    bool decMovedToAvoidObstacle; // 是否已经移动DEC轴避开遮挡
+    bool decMovedAtStart;         // 是否在开始时移动了DEC轴脱离极点
+    bool secondCaptureAvoided;    // 是否进行了第二次拍摄避障
+    bool thirdCaptureAvoided;    // 是否进行了第三次拍摄避障
+    int captureAttemptCount;     // 遮挡检测时的拍摄尝试次数
+
+    // 解析模式状态
+    int lastSolveMode;                 // 上一次解析使用的模式（0=全局，1=视场，2=视场+RA/DEC）
+    int consecutiveMode2SolveFailures; // 在模式2下连续解析失败次数
+    int guidanceAdjustmentAttemptCount = 0; // 本次极轴校准调整阶段尝试次数
+    int guidanceSolveSuccessCount = 0;  // 本次极轴校准调整阶段解析成功次数
+    int guidanceSolveTotalCount = 0;    // 本次极轴校准调整阶段解析总次数
+
+    // 调整指导数据容器
+    QVector<AdjustmentGuideData> adjustmentGuideDataHistory; // 调整指导数据历史记录
+
+    // 缓存目标位置，避免频繁重新计算
+    double targetRA;        // 缓存的目标RA位置
+    double targetDEC;       // 缓存的目标DEC位置
+    bool isTargetPositionCached;  // 目标位置是否已缓存
+    
+    // 缓存假极轴位置，避免频繁重新计算
+    double cachedFakePolarRA;     // 缓存的假极轴RA位置
+    double cachedFakePolarDEC;    // 缓存的假极轴DEC位置
+    bool isFakePolarCached;       // 假极轴位置是否已缓存
+    
+    // 缓存真极轴位置，避免频繁重新计算
+    double realPolarRA;           // 真极轴RA位置
+    double realPolarDEC;          // 真极轴DEC位置
+    bool isRealPolarCached;       // 真极轴位置是否已缓存
+
+    // 测试图片
+    int testimage;
+
+    // 图像引导状态（实时闭环）
+    PolarImageGuidanceMode imageGuideMode = PolarImageGuidanceMode::INIT;
+    qint64 imageGuideFrameId = 0;
+    bool imageGuideHasLock = false;
+    PolarImageGuidePoint lockedGuideStar;
+    cv::Point2d lastTargetPixel{-1.0, -1.0};
+    cv::Point2d imageGuideEstimatedTargetPx{-1.0, -1.0};
+    bool imageGuideEstimatedTargetValid = false;
+    cv::Point2d lockStarFixedTargetPx{-1.0, -1.0};
+    bool lockStarTargetReady = false;
+    std::vector<PolarImageGuidePoint> previousGuideStars;
+    cv::Mat previousGuideGray8;
+    int imageGuideLostFrames = 0;
+    int imageGuideStableFrames = 0;
+    int imageGuideLastInliers = 0;
+    double imageGuideLockConfidence = 0.0;
+    double imageGuideLastReprojErrPx = 0.0;
+    qint64 imageGuideReanchorStartedMs = 0;
+    qint64 imageGuideLastReanchorMs = 0;
+    qint64 imageGuideLastFrameTimestampMs = 0;
+    cv::Point2d imageGuideDriftVelocityPxPerSec{0.0, 0.0};
+    bool imageGuideDriftVelocityValid = false;
+    bool forceGlobalSolveOnce = false;
+    int lastSolveModeUsed = 1;
+    bool imageGuideFreshSolveThisFrame = false;
+    bool imageGuideReanchorNeedFreshSolve = false;
+    bool imageGuidePerfReduced = false;
+    double imageGuideLastFrameProcessMs = 0.0;
+    int imageGuideFastLoopBudgetMs = 80;
+    QString guidanceSolveModeProfile = "guide_fast";
+    int guidanceFullSolveIntervalFrames = 5;
+    PolarGuidanceRuntimeV2 guidanceV2;
+
+    // 图像引导固定参数（树莓派实时优先）
+    int imageGuideLostFramesThreshold = 5;
+    int imageGuideMinMultiInliers = 6;
+    double imageGuideRansacThresholdPx = 2.5;
+    double imageGuideEdgeMarginRatio = 0.08;
+    double imageGuideDoneThresholdPx = 3.0;
+    int imageGuideStableFramesNeeded = 8;
+    int imageGuideReanchorCooldownMs = 4000;
+    int imageGuideReanchorTimeoutMs = 20000;
+    const int imageGuideJpegMaxLongEdge = 960;
+    const int imageGuideJpegQuality = 68;
+    int imageGuideMatchMaxStars = 200;
+    int imageGuideMatchMinInliersV2 = 8;
+    double imageGuideMatchMinInlierRatioV2 = 0.35;
+    double imageGuideTrackBaseRadiusPxV2 = 18.0;
+    double imageGuideTrackMaxRadiusPxV2 = 80.0;
+    double imageGuideTrackRadiusVelGainV2 = 1.2;
+    int imageGuideRecoverMaxFramesV2 = 12;
+    int imageGuideFullSolveMaxIntervalV2 = 8;
+    qint64 imageGuideLastFullSolveFrameId = 0;
+    bool imageGuideDriftCompensationEnabled = true;
+    double imageGuideDriftLowPassAlpha = 0.25;
+    double imageGuideDriftExposureNoiseFactor = 0.5;
+    double imageGuideFreshSolveReanchorAlpha = 0.35;
+    double imageGuideDynamicThresholdSigmaFactor = 2.5;
+    double imageGuideDoneThresholdArcsec = 0.0;
+};
+
+#endif // POLARALIGNMENT_H
