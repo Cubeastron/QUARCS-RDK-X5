@@ -11,6 +11,8 @@ import _ from 'lodash'
 import StelWebEngine from '@/assets/js/stellarium-web-engine.js'
 import Moment from 'moment'
 import { translateSkyLabel } from './sky-localization'
+import chineseRegularFont from '../../public/fonts/QUARCSSkySC-Regular.otf'
+import chineseBoldFont from '../../public/fonts/QUARCSSkySC-Bold.otf'
 
 //by QIU just only for testing
 const myData=
@@ -108,7 +110,7 @@ DDDate.prototype.setMJD = function (mjd) {
 
 const generatedSkyObjects = new Map()
 
-async function installSkyFont (engine, fontPath, weight, fallbackWeight) {
+async function installSkyFont (engine, fontPath, weight, chineseFont, fallbackFont) {
   const style = weight.toLowerCase()
   try {
     await engine.setFont(style, fontPath + 'Roboto-' + weight + '.ttf')
@@ -117,9 +119,9 @@ async function installSkyFont (engine, fontPath, weight, fallbackWeight) {
     console.warn('Failed to load Roboto for the sky map', error)
   }
   try {
-    await engine.setFont(style, fontPath + 'QUARCSSkySC-' + weight + '.otf')
+    await engine.setFont(style, chineseFont)
   } catch {
-    await engine.setFont(style, fontPath + 'QUARCSSkySC-' + fallbackWeight + '.otf')
+    await engine.setFont(style, fallbackFont)
   }
 }
 
@@ -136,8 +138,8 @@ const swh = {
         generatedSkyObjects.clear()
         const fontPath = process.env.BASE_URL + 'fonts/'
         Promise.all([
-          installSkyFont(lstel, fontPath, 'Regular', 'Bold'),
-          installSkyFont(lstel, fontPath, 'Bold', 'Regular')
+          installSkyFont(lstel, fontPath, 'Regular', chineseRegularFont, chineseBoldFont),
+          installSkyFont(lstel, fontPath, 'Bold', chineseBoldFont, chineseRegularFont)
         ]).then(() => {
           chineseFontsReady = true
         }).catch(error => console.error('Failed to load sky map fonts', error))

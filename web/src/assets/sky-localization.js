@@ -28,10 +28,15 @@ export function localizedSkySourceType (type, locale) {
 }
 
 export function translateSkyLabel (domain, label) {
-  if (domain === 'gui' && Object.prototype.hasOwnProperty.call(catalog.directions, label)) {
-    return catalog.directions[label]
+  if (domain === 'gui') {
+    for (const labels of [catalog.directions, catalog.gridLabels]) {
+      if (Object.prototype.hasOwnProperty.call(labels, label)) return labels[label]
+    }
   }
-  if (domain === 'skyculture') return constellationNames.get(designationKey(label)) || label
+  if (domain === 'skyculture') {
+    const key = designationKey(label)
+    return constellationNames.get(key) || objectNames.get(key) || label
+  }
   if (domain === 'sky') return objectNames.get(designationKey(label)) || label
   return label
 }

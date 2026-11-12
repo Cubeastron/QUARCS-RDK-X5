@@ -9,6 +9,11 @@
     "SW": "西南",
     "NW": "西北"
   },
+  "gridLabels": {
+    "Meridian": "子午线",
+    "Ecliptic": "黄道",
+    "Equator": "天赤道"
+  },
   "constellations": {
     "And": {
       "name": "Andromeda",
@@ -639,7 +644,8 @@
       "zh": "开阳",
       "names": [
         "Mizar",
-        "HIP 65378"
+        "HIP 65378",
+        "* zet UMa"
       ]
     },
     {
@@ -651,6 +657,7 @@
     },
     {
       "zh": "仙女座星系",
+      "canvasLabel": "M 31",
       "names": [
         "M 31",
         "NGC 224",
@@ -664,6 +671,7 @@
     },
     {
       "zh": "昴星团",
+      "canvasLabel": "Pleiades",
       "names": [
         "M 45",
         "Pleiades",
@@ -677,6 +685,7 @@
     },
     {
       "zh": "猎户座大星云",
+      "canvasLabel": "M 42",
       "names": [
         "M 42",
         "NGC 1976",
@@ -690,6 +699,7 @@
     },
     {
       "zh": "北美洲星云",
+      "canvasLabel": "NGC 7000",
       "names": [
         "NGC 7000",
         "North America Nebula"
@@ -827,6 +837,177 @@
       "aliases": [
         "鬼星团"
       ]
+    },
+    {
+      "zh": "奎宿九",
+      "names": ["Mirach", "* bet And"]
+    },
+    {
+      "zh": "天大将军一",
+      "names": ["Almach", "* gam01 And"]
+    },
+    {
+      "zh": "娄宿三",
+      "names": ["Hamal", "* alf Ari"]
+    },
+    {
+      "zh": "天囷一",
+      "names": ["Menkar", "* alf Cet"]
+    },
+    {
+      "zh": "北极二",
+      "names": ["Kochab", "* bet UMi"]
+    },
+    {
+      "zh": "贯索四",
+      "names": ["Alphecca", "* alf CrB"]
+    },
+    {
+      "zh": "天棓四",
+      "names": ["Eltanin", "* gam Dra"]
+    },
+    {
+      "zh": "水委一",
+      "names": ["Achernar", "* alf Eri"]
+    },
+    {
+      "zh": "房宿三",
+      "names": ["Dschubba", "* del Sco"]
+    },
+    {
+      "zh": "尾宿八",
+      "names": ["Shaula", "* lam Sco"]
+    },
+    {
+      "zh": "木卫一",
+      "names": ["Io"],
+      "aliases": ["艾奥"]
+    },
+    {
+      "zh": "木卫二",
+      "names": ["Europa"],
+      "aliases": ["欧罗巴"]
+    },
+    {
+      "zh": "木卫三",
+      "names": ["Ganymede"],
+      "aliases": ["盖尼米得"]
+    },
+    {
+      "zh": "木卫四",
+      "names": ["Callisto"],
+      "aliases": ["卡利斯托"]
+    },
+    {
+      "zh": "土卫二",
+      "names": ["Enceladus"],
+      "aliases": ["恩克拉多斯"]
+    },
+    {
+      "zh": "土卫六",
+      "names": ["Titan"],
+      "aliases": ["泰坦"]
+    },
+    {
+      "zh": "土卫八",
+      "names": ["Iapetus"]
+    },
+    {
+      "zh": "谷神星",
+      "names": ["Ceres"]
+    },
+    {
+      "zh": "灶神星",
+      "names": ["Vesta"]
+    },
+    {
+      "zh": "智神星",
+      "names": ["Pallas"]
+    },
+    {
+      "zh": "婚神星",
+      "names": ["Juno"]
+    },
+    {
+      "zh": "阋神星",
+      "names": ["Eris"]
+    },
+    {
+      "zh": "妊神星",
+      "names": ["Haumea"]
+    },
+    {
+      "zh": "鸟神星",
+      "names": ["Makemake"]
+    },
+    {
+      "zh": "加州星云",
+      "names": ["NGC 1499", "California Nebula"],
+      "canvasLabel": "NGC 1499"
+    },
+    {
+      "zh": "心脏星云",
+      "names": ["IC 1805", "Heart Nebula"],
+      "canvasLabel": "IC 1805"
+    },
+    {
+      "zh": "灵魂星云",
+      "names": ["IC 1848", "Soul Nebula"],
+      "canvasLabel": "IC 1848"
+    },
+    {
+      "zh": "东面纱星云",
+      "names": ["NGC 6992", "C 33", "East Veil Nebula"],
+      "canvasLabel": "C 33",
+      "aliases": ["面纱星云东部"]
+    },
+    {
+      "zh": "西面纱星云",
+      "names": ["NGC 6960", "C 34", "West Veil Nebula", "Witch's Broom Nebula"],
+      "canvasLabel": "C 34",
+      "aliases": ["女巫扫帚星云", "面纱星云西部"]
+    },
+    {
+      "zh": "新月星云",
+      "names": ["NGC 6888", "C 27", "Crescent Nebula"],
+      "canvasLabel": "C 27"
+    },
+    {
+      "zh": "鹈鹕星云",
+      "names": ["IC 5070", "Pelican Nebula"],
+      "canvasLabel": "IC 5070"
+    },
+    {
+      "zh": "气泡星云",
+      "names": ["NGC 7635", "C 11", "Bubble Nebula"],
+      "canvasLabel": "C 11",
+      "aliases": ["泡泡星云"]
+    },
+    {
+      "zh": "吃豆人星云",
+      "names": ["NGC 281", "Pacman Nebula", "Pac-Man Nebula"],
+      "canvasLabel": "NGC 281"
+    },
+    {
+      "zh": "雷神头盔星云",
+      "names": ["NGC 2359", "Thor's Helmet"],
+      "canvasLabel": "NGC 2359",
+      "aliases": ["雷神之盔"]
+    },
+    {
+      "zh": "波德星系",
+      "names": ["M 81", "NGC 3031", "Bode's Galaxy"],
+      "canvasLabel": "M 81"
+    },
+    {
+      "zh": "雪茄星系",
+      "names": ["M 82", "NGC 3034", "Cigar Galaxy"],
+      "canvasLabel": "M 82"
+    },
+    {
+      "zh": "风车星系",
+      "names": ["M 101", "NGC 5457", "Pinwheel Galaxy"],
+      "canvasLabel": "M 101"
     }
   ]
 }
