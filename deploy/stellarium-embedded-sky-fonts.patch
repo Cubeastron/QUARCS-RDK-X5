@@ -1,0 +1,65 @@
+diff --git a/SConstruct b/SConstruct
+index 9f5e9e0..cef52aa 100644
+--- a/SConstruct
++++ b/SConstruct
+@@ -114,8 +114,6 @@ extra_exported = [
+     'ALLOC_NORMAL',
+     'GL',
+     'UTF8ToString',
+-    '_free',
+-    '_malloc',
+     'addFunction',
+     'allocate',
+     'ccall',
+@@ -148,8 +146,8 @@ link_flags = [
+     '-s', 'USE_WEBGL2=1',
+     '-s', 'NO_EXIT_RUNTIME=1',
+     '-s', 'SUPPORT_LONGJMP=emscripten',
+-    '-s', '"EXPORTED_FUNCTIONS=[]"',
+-    '-s', '"EXTRA_EXPORTED_RUNTIME_METHODS=[%s]"' % extra_exported,
++    '-s', 'EXPORTED_FUNCTIONS=_free,_malloc',
++    '-s', '"EXPORTED_RUNTIME_METHODS=[%s]"' % extra_exported,
+     '-s', 'FILESYSTEM=0',
+ ]
+
+diff --git a/src/render_gl.c b/src/render_gl.c
+index 847e5c2..c422de2 100644
+--- a/src/render_gl.c
++++ b/src/render_gl.c
+@@ -2086,12 +2086,36 @@ void core_add_font(renderer_t *rend, const char *name,
+     }
+ }
+
++static bool sky_fonts_ready;
++
++EMSCRIPTEN_KEEPALIVE
++int core_sky_fonts_ready(void)
++{
++    return sky_fonts_ready;
++}
++
++static bool add_sky_font(renderer_t *rend, int face, const char *name,
++                         const char *url)
++{
++    int size;
++    const uint8_t *data = asset_get_data(url, &size, NULL);
++    if (!data) return false;
++    int id = nvgCreateFontMem(rend->vg, name, (unsigned char*)data, size, 0);
++    if (id < 0) return false;
++    return nvgAddFallbackFontId(rend->vg, rend->fonts[face].id, id) != 0;
++}
++
+ static void set_default_fonts(renderer_t *rend)
+ {
+     core_add_font(rend, "regular", "asset://font/NotoSans-Regular.ttf",
+                   NULL, 0);
+     core_add_font(rend, "bold", "asset://font/NotoSans-Bold.ttf",
+                   NULL, 0);
++    bool regular = add_sky_font(rend, FONT_REGULAR, "quarcs-sc-regular",
++                                "asset://font/QUARCSSkySC-Regular.ttf");
++    bool bold = add_sky_font(rend, FONT_BOLD, "quarcs-sc-bold",
++                             "asset://font/QUARCSSkySC-Bold.ttf");
++    sky_fonts_ready = regular && bold;
+     rend->fonts[FONT_REGULAR].is_default_font = true;
+     rend->fonts[FONT_BOLD].is_default_font = true;
+ }

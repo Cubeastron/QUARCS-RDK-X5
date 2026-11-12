@@ -11,8 +11,6 @@ import _ from 'lodash'
 import StelWebEngine from '@/assets/js/stellarium-web-engine.js'
 import Moment from 'moment'
 import { translateSkyLabel } from './sky-localization'
-import chineseRegularFont from '../../public/fonts/QUARCSSkySC-Regular.otf'
-import chineseBoldFont from '../../public/fonts/QUARCSSkySC-Bold.otf'
 
 //by QIU just only for testing
 const myData=
@@ -110,39 +108,21 @@ DDDate.prototype.setMJD = function (mjd) {
 
 const generatedSkyObjects = new Map()
 
-async function installSkyFont (engine, fontPath, weight, chineseFont, fallbackFont) {
-  const style = weight.toLowerCase()
-  try {
-    await engine.setFont(style, fontPath + 'Roboto-' + weight + '.ttf')
-  } catch (error) {
-    // The engine adds its built-in Latin fallback when the Chinese font loads.
-    console.warn('Failed to load Roboto for the sky map', error)
-  }
-  try {
-    await engine.setFont(style, chineseFont)
-  } catch {
-    await engine.setFont(style, fallbackFont)
-  }
-}
-
 const swh = {
   initStelWebEngine: function (store, wasmFile, canvasElem, getLocale, callBackOnDone) {
+    let engine
     let chineseFontsReady = false
     StelWebEngine({
       wasmFile: wasmFile,
       canvas: canvasElem,
       translateFn: function (domain, str) {
-        return chineseFontsReady && getLocale() === 'cn' ? translateSkyLabel(domain, str) : str
+        if (getLocale() !== 'cn') return str
+        if (!chineseFontsReady && engine) chineseFontsReady = !!engine._core_sky_fonts_ready()
+        return chineseFontsReady ? translateSkyLabel(domain, str) : str
       },
       onReady: function (lstel) {
+        engine = lstel
         generatedSkyObjects.clear()
-        const fontPath = process.env.BASE_URL + 'fonts/'
-        const fontsReady = Promise.all([
-          installSkyFont(lstel, fontPath, 'Regular', chineseRegularFont, chineseBoldFont),
-          installSkyFont(lstel, fontPath, 'Bold', chineseBoldFont, chineseRegularFont)
-        ]).then(() => {
-          chineseFontsReady = true
-        }).catch(error => console.error('Failed to load sky map fonts', error))
         store.commit('replaceStelWebEngine', lstel.getTree())
         lstel.onValueChanged(function (path, value) {
           const tree = store.state.stel
@@ -153,7 +133,7 @@ const swh = {
         Vue.prototype.$selectionLayer = lstel.createLayer({ id: 'slayer', z: 50, visible: true })
         Vue.prototype.$observingLayer = lstel.createLayer({ id: 'obslayer', z: 40, visible: true })
         Vue.prototype.$skyHintsLayer = lstel.createLayer({ id: 'skyhintslayer', z: 38, visible: true })
-        callBackOnDone(fontsReady)
+        callBackOnDone()
       }
     })
   },

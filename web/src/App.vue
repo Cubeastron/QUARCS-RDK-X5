@@ -879,8 +879,7 @@
         <div id="stel" v-bind:class="{ right_panel: $store.state.showSidePanel }">
           <div style="position: relative; width: 100%; height: 100%">
             <component v-bind:is="guiComponent"></component>
-            <canvas id="stel-canvas" ref='stelCanvas'
-              :style="{ zIndex: canvasZIndexStel, visibility: skyFontsInitialized ? 'visible' : 'hidden' }"></canvas>
+            <canvas id="stel-canvas" ref='stelCanvas' :style="{ zIndex: canvasZIndexStel }"></canvas>
             <canvas ref="mainCanvas" id="mainCamera-canvas" :style="{ zIndex: canvasZIndexMainCamera }"
               @click="handleMainCanvasClick" @touchstart="handleTouchStart" @touchmove="handleTouchMove"
               @touchend="handleTouchEnd" @touchcancel="handleTouchEnd"
@@ -1126,7 +1125,6 @@ export default {
       ]),
       menuComponents: [].concat(this.getPluginsMenuComponents()),
       guiComponent: 'GuiLoader',
-      skyFontsInitialized: false,
       startTimeIsSet: false,
       initDone: false,
       dataSourceInitDone: false,
@@ -11804,10 +11802,7 @@ export default {
         // in the $store.stel object in a reactive way (useful for vue components).
         // To modify the state of the StelWebEngine, it's enough to call/set values directly on the $stel object
         try {
-          swh.initStelWebEngine(that.$store, f.default, that.$refs.stelCanvas, () => that.$i18n.locale, function (fontsReady) {
-            fontsReady.then(() => {
-              if (!that._isDestroyed) that.skyFontsInitialized = true
-            })
+          swh.initStelWebEngine(that.$store, f.default, that.$refs.stelCanvas, () => that.$i18n.locale, function () {
             // Start auto location detection (even if we don't use it)
             swh.getGeolocation().then(p => swh.geoCodePosition(p, that)).then((loc) => {
               that.$store.commit('setAutoDetectedLocation', loc)
