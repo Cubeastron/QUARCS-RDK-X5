@@ -210,6 +210,32 @@
   "Stop this exposure": "Stop this exposure",
   "Start exposure": "Start exposure",
   "Exposure stop was not confirmed. Tap again to retry.": "Exposure stop was not confirmed. Tap again to retry.",
+  "IndiStartup": {
+    "title": "Startup drivers",
+    "devices": "Device properties",
+    "driver": "INDI driver",
+    "load": "Start with INDI",
+    "running": "Current startup",
+    "loaded": "Loaded",
+    "unloaded": "Not loaded",
+    "unavailable": "Driver unavailable",
+    "pending": "Settings are saved and will take effect after INDI restarts.",
+    "restartHint": "Restarting disconnects devices. Wait for capture or guiding to finish, then reconnect the selected devices in QUARCS.",
+    "save": "Save",
+    "restart": "Restart INDI",
+    "saved": "Startup driver settings saved.",
+    "restarted": "INDI restarted.",
+    "invalidDrivers": "Select at least one valid driver.",
+    "driverUnavailable": "A selected driver is unavailable on this board.",
+    "serviceError": "Could not read or update INDI startup settings. Refresh and try again.",
+    "driverNames": {
+      "qhy": "QHY camera",
+      "onstep": "LX200 OnStep mount",
+      "nikon": "Nikon DSLR",
+      "robofocus": "RoboFocus focuser",
+      "v4l2": "V4L2 camera"
+    }
+  },
   "IndiPanel": {
     "title": "INDI Control Panel",
     "device": "Device",

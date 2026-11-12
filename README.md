@@ -53,6 +53,10 @@ WebSocket 转发服务在 `hub/` 中执行 `npm ci --omit=dev`。服务运行目
 
 首次部署离线搜索时，从自有 QUARCS 镜像内的 `/home/quarcs/workspace/QUARCS/searchapi/` 取出 `dso.txt` 和 `stars_l.txt`，和 `search/server.py` 一起放到 `/opt/quarcs/search/`，然后启用 `quarcs-search.service`。搜索程序使用 Python 3.10 及以上的标准库。
 
+### INDI 启动驱动
+
+将 `deploy/indi-startup.py` 安装到 `/opt/quarcs/bin/`，安装并启用 `quarcs-indi-startup.socket` 及其同名服务单元，再应用 `deploy/nginx/quarcs-rdk.conf`。网页的 INDI 控制面板提供「启动驱动」入口。保存会写入 `/etc/systemd/system/indi.service.d/99-quarcs-drivers.conf`，点击「重启 INDI」后驱动列表生效。重启后可用 QUARCS 的「连接所选设备」重新连接。这个入口管理仓库所用的 QHY、OnStep、尼康、RoboFocus 和 V4L2 驱动。
+
 ### 简体中文星图
 
 网页使用现有的语言选项，简体中文模式显示中文方位、星座和常见天体。将 `web/src/assets/sky-zh-cn.json` 与 `search/server.py` 一起安装到 `/opt/quarcs/search/`，然后重启搜索服务，启用中文别名。星表编号和已有英文查询继续可用。

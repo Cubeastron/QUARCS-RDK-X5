@@ -5,11 +5,17 @@
       <v-card-title>
         {{ $t('IndiPanel.title') }}
         <v-spacer />
+        <v-btn text @click="showStartup = !showStartup">
+          {{ $t(showStartup ? 'IndiStartup.devices' : 'IndiStartup.title') }}
+        </v-btn>
         <v-btn icon :aria-label="$t('IndiPanel.close')" @click="$emit('close')">
           <v-icon>mdi-close</v-icon>
         </v-btn>
       </v-card-title>
-      <v-card-text>
+      <v-card-text v-if="showStartup">
+        <IndiStartupDrivers />
+      </v-card-text>
+      <v-card-text v-else>
         <div class="indi-toolbar">
           <v-select v-model="device" :items="devices" item-text="name" item-value="name"
             :label="$t('IndiPanel.device')" dense hide-details @change="selectDevice" data-testid="indi-device">
@@ -78,10 +84,14 @@
 </template>
 
 <script>
+import IndiStartupDrivers from '@/components/IndiStartupDrivers.vue';
+
 export default {
+  components: { IndiStartupDrivers },
   props: { sendCommand: { type: Function, required: true } },
   data() {
     return {
+      showStartup: false,
       device: '',
       devices: [],
       properties: [],
@@ -104,7 +114,9 @@ export default {
   },
   mounted() {
     this.refresh();
-    this.poll = setInterval(this.refresh, 1800);
+    this.poll = setInterval(() => {
+      if (!this.showStartup) this.refresh();
+    }, 1800);
   },
   beforeDestroy() { clearInterval(this.poll); },
   methods: {

@@ -1,0 +1,11 @@
+[Unit]
+Description=QUARCS INDI startup settings socket
+
+[Socket]
+ListenStream=/run/quarcs-indi-startup.sock
+SocketGroup=www-data
+SocketMode=0660
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

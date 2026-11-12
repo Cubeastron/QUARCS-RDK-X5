@@ -1,0 +1,13 @@
+[Unit]
+Description=QUARCS INDI startup driver settings
+Requires=quarcs-indi-startup.socket
+After=quarcs-indi-startup.socket
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/quarcs/bin/indi-startup.py
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/systemd/system/indi.service.d
+RestrictAddressFamilies=AF_UNIX
+TimeoutStopSec=5s

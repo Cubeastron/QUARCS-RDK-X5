@@ -592,6 +592,32 @@
   "Stop this exposure": "停止这次拍摄",
   "Start exposure": "开始拍摄",
   "Exposure stop was not confirmed. Tap again to retry.": "未收到停止确认，可再点一次重试。",
+  "IndiStartup": {
+    "title": "启动驱动",
+    "devices": "设备参数",
+    "driver": "INDI 驱动",
+    "load": "随服务启动",
+    "running": "本次启动",
+    "loaded": "已加载",
+    "unloaded": "未加载",
+    "unavailable": "未找到驱动",
+    "pending": "设置已保存，重启 INDI 后生效。",
+    "restartHint": "重启会断开设备。请在拍摄或导星结束后操作，再点「连接所选设备」。",
+    "save": "保存",
+    "restart": "重启 INDI",
+    "saved": "已保存启动驱动设置。",
+    "restarted": "INDI 已重启。",
+    "invalidDrivers": "请选择至少一个有效的驱动。",
+    "driverUnavailable": "所选驱动在板上不可用。",
+    "serviceError": "无法读取或更新 INDI 启动设置，请刷新后重试。",
+    "driverNames": {
+      "qhy": "QHY 相机",
+      "onstep": "LX200 OnStep 赤道仪",
+      "nikon": "尼康 DSLR",
+      "robofocus": "RoboFocus 电调",
+      "v4l2": "V4L2 相机"
+    }
+  },
   "IndiPanel": {
     "title": "INDI 控制面板",
     "device": "设备",
