@@ -1,0 +1,4 @@
+#!/bin/sh
+# ASCOM-style capture timing with the preserved distro SDK.
+export LD_PRELOAD="/usr/lib/aarch64-linux-gnu/libqhyccd.so.26.2.1${LD_PRELOAD:+:$LD_PRELOAD}"
+exec /usr/local/libexec/indi-qhy-ascom-style/20261031-134911/indi_qhy_ccd "$@"

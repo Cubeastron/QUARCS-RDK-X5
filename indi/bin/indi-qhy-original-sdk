@@ -1,0 +1,4 @@
+#!/bin/sh
+# Select the preserved distro QHY SDK for this driver only.
+export LD_PRELOAD="/usr/lib/aarch64-linux-gnu/libqhyccd.so.26.2.1${LD_PRELOAD:+:$LD_PRELOAD}"
+exec /usr/bin/indi_qhy_ccd "$@"

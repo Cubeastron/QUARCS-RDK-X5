@@ -13,6 +13,7 @@
 | `hub/` | Node.js WebSocket 转发服务 |
 | `search/` | 与 QUARCS 原网页兼容的离线星表 API |
 | `deploy/` | RDK X5 的 systemd 和 Nginx 配置 |
+| [`indi/`](indi/README.md) | 板上已有的 INDI 服务配置、软件包版本和本地 QHY 驱动源码 |
 
 ## 构建
 
@@ -60,4 +61,4 @@ WebSocket 转发服务在 `hub/` 中执行 `npm ci --omit=dev`。服务运行目
 | WebSocket 转发 | [`4b87977`](https://github.com/QHYCCD-QUARCS/QUARCS_NodeJs-Transponder/tree/4b8797760b82139af06a0fc5fc5e1621abc67fd7) |
 | Vue 前端与 Stellarium Web Engine | [`71c39ec`](https://github.com/QHYCCD-QUARCS/QUARCS_stellarium-web-engine/tree/71c39ecf7301c4f7a4e325539a2350876a6e4744) |
 
-项目采用 AGPL-3.0，上游许可声明保留在各组件目录。板上的镜像、运行配置、TLS 私钥和镜像中的离线星表数据留在设备或本地备份中。
+QUARCS 的上游许可声明保留在各组件目录。INDI 驱动的许可见 `indi/licenses/`。板上的镜像、设备私有配置、TLS 私钥和离线星表数据留在设备或本地备份中。

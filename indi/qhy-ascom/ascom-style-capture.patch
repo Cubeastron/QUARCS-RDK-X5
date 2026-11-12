@@ -1,0 +1,323 @@
+--- a/qhy_ccd.cpp
++++ b/qhy_ccd.cpp
+@@ -64,9 +64,9 @@
+     LOGF_INFO("*** This is the camera name: [%s]", m_Name);
+     LOGF_INFO("*** This is the camera ID: [%s]", m_CamID);
+ 
+-    setDeviceName(this->m_Name);
+-
+-    setDeviceNicknameFromId(m_CamID);
++    // Retain the model name when no nickname is saved. PHD2 profiles use it.
++    if (!setDeviceNicknameFromId(m_CamID))
++        setDeviceName(this->m_Name);
+ 
+     setVersion(INDI_QHY_VERSION_MAJOR, INDI_QHY_VERSION_MINOR);
+ 
+@@ -647,6 +647,7 @@
+ 
+ bool QHYCCD::Connect()
+ {
++    invalidateCaptureSettings();
+     uint32_t cap;
+ 
+ 
+@@ -686,6 +687,20 @@
+ 
+         cap = CCD_CAN_ABORT | CCD_CAN_SUBFRAME;
+ 
++        // Match the ASCOM initialization order for QHY5PII-C.
++        if (isQHY5PIIC())
++        {
++            uint32_t modeResult = SetQHYCCDReadMode(m_CameraHandle, 0);
++            if (modeResult != QHYCCD_SUCCESS)
++            {
++                LOGF_ERROR("Set QHY5PII-C read mode failed (%u)", modeResult);
++                CloseQHYCCD(m_CameraHandle);
++                m_CameraHandle = nullptr;
++                return false;
++            }
++            LOG_INFO("QHY5PII-C ASCOM-style capture: cached exposure/ROI, SDK-directed readout.");
++        }
++
+         // Disable the stream mode before connecting
+         currentQHYStreamMode = 0;
+         uint32_t ret = SetQHYCCDStreamMode(m_CameraHandle, currentQHYStreamMode);
+@@ -693,7 +708,7 @@
+         {
+             LOGF_ERROR("Can not disable stream mode (%d)", ret);
+         }
+-        ret = InitQHYCCD(m_CameraHandle);
++        ret = initializeCamera();
+         if (ret != QHYCCD_SUCCESS)
+         {
+             LOGF_ERROR("Init Camera failed (%d)", ret);
+@@ -845,12 +860,9 @@
+         {
+             HasUSBSpeed = true;
+ 
+-            // Force a certain speed on initialization of QHY5PII-C:
+-            // CONTROL_SPEED = 2 - Fastest, but the camera gets stuck with long exposure times.
+-            // CONTROL_SPEED = 1 - This is safe with the current driver.
+-            // CONTROL_SPEED = 0 - This is safe, but slower than 1.
++            // Match the ASCOM setting used by this camera's verified single-frame path.
+             if (isQHY5PIIC())
+-                SetQHYCCDParam(m_CameraHandle, CONTROL_SPEED, 1);
++                SetQHYCCDParam(m_CameraHandle, CONTROL_SPEED, 0);
+         }
+ 
+         LOGF_DEBUG("USB Speed Control: %s", HasUSBSpeed ? "True" : "False");
+@@ -952,10 +964,9 @@
+         if (ret == QHYCCD_SUCCESS)
+         {
+             HasUSBTraffic = true;
+-            // Force the USB traffic value to 30 on initialization of QHY5PII-C otherwise
+-            // the camera has poor transfer speed.
++            // Match the verified ASCOM USB traffic setting.
+             if (isQHY5PIIC())
+-                SetQHYCCDParam(m_CameraHandle, CONTROL_USBTRAFFIC, 30);
++                SetQHYCCDParam(m_CameraHandle, CONTROL_USBTRAFFIC, 0);
+         }
+ 
+         LOGF_DEBUG("USB Traffic Control: %s", HasUSBTraffic ? "True" : "False");
+@@ -1109,6 +1120,8 @@
+ 
+     tState = StateNone;
+ 
++    invalidateCaptureSettings();
++
+     LOG_INFO("Camera is offline.");
+ 
+     return true;
+@@ -1176,6 +1189,11 @@
+         //}
+     }
+ 
++    // Match the SDK mode selected once by initializeCamera(). Older SDK chip
++    // information for QHY5PII-C reports 8 even when 16-bit transfer is selected.
++    if (!isSimulation() && isQHY5PIIC())
++        bpp = 16;
++
+     //NEW CODE - Add support for overscan/calibration area
+     //Overscan area is ignored, exposure frame to be within effectiveROI
+     if (IgnoreOverscanArea)
+@@ -1215,6 +1233,21 @@
+     setCoolerEnabled(m_TemperatureRequest <= TemperatureNP[0].getValue());
+     setCoolerMode(COOLER_AUTOMATIC);
+     return 0;
++}
++
++void QHYCCD::invalidateCaptureSettings()
++{
++    m_LastExposureRequestuS = -1;
++    m_CaptureROIValid = false;
++}
++
++uint32_t QHYCCD::initializeCamera()
++{
++    invalidateCaptureSettings();
++    uint32_t result = InitQHYCCD(m_CameraHandle);
++    if (result == QHYCCD_SUCCESS && currentQHYStreamMode == 0 && isQHY5PIIC())
++        result = SetQHYCCDBitsMode(m_CameraHandle, 16);
++    return result;
+ }
+ 
+ bool QHYCCD::StartExposure(float duration)
+@@ -1249,7 +1282,7 @@
+         currentQHYStreamMode = 0;
+         SetQHYCCDStreamMode(m_CameraHandle, currentQHYStreamMode);
+ 
+-        ret = InitQHYCCD(m_CameraHandle);
++        ret = initializeCamera();
+         if(ret != QHYCCD_SUCCESS)
+         {
+             LOGF_INFO("Init QHYCCD for streaming mode failed, code:%d", ret);
+@@ -1282,6 +1315,7 @@
+     {
+         if (m_LastExposureRequestuS != uSecs)
+         {
++            m_LastExposureRequestuS = -1;
+             ret = SetQHYCCDParam(m_CameraHandle, CONTROL_EXPOSURE, uSecs);
+ 
+             if (ret != QHYCCD_SUCCESS)
+@@ -1291,6 +1325,7 @@
+             }
+ 
+             m_LastExposureRequestuS = uSecs;
++            LOGF_DEBUG("SDK exposure parameter updated to %ld us", uSecs);
+         }
+     }
+ 
+@@ -1301,6 +1336,7 @@
+         ret = SetQHYCCDBinMode(m_CameraHandle, PrimaryCCD.getBinX(), PrimaryCCD.getBinY());
+     if (ret != QHYCCD_SUCCESS)
+     {
++        invalidateCaptureSettings();
+         LOGF_INFO("Set QHYCCD Bin mode failed (%d)", ret);
+         return false;
+     }
+@@ -1310,11 +1346,30 @@
+     // Set Region of Interest (ROI)
+     if (isSimulation())
+         ret = QHYCCD_SUCCESS;
++    else if (!isQHY5PIIC() || !m_CaptureROIValid ||
++             m_CaptureROIX != subX || m_CaptureROIY != subY ||
++             m_CaptureROIW != subW || m_CaptureROIH != subH ||
++             m_CaptureBinX != PrimaryCCD.getBinX() || m_CaptureBinY != PrimaryCCD.getBinY())
++    {
++        m_CaptureROIValid = false;
++        ret = SetQHYCCDResolution(m_CameraHandle, subX, subY, subW, subH);
++        if (ret == QHYCCD_SUCCESS)
++        {
++            m_CaptureROIX = subX;
++            m_CaptureROIY = subY;
++            m_CaptureROIW = subW;
++            m_CaptureROIH = subH;
++            m_CaptureBinX = PrimaryCCD.getBinX();
++            m_CaptureBinY = PrimaryCCD.getBinY();
++            m_CaptureROIValid = true;
++        }
++    }
+     else
+-        ret = SetQHYCCDResolution(m_CameraHandle, subX, subY, subW, subH);
++        ret = QHYCCD_SUCCESS;
+ 
+     if (ret != QHYCCD_SUCCESS)
+     {
++        invalidateCaptureSettings();
+         LOGF_INFO("Set QHYCCD ROI resolution (%d,%d) (%d,%d) failed (%d)", subX, subY, subW, subH, ret);
+         return false;
+     }
+@@ -1328,9 +1383,18 @@
+         ret = ExpQHYCCDSingleFrame(m_CameraHandle);
+     if (ret == QHYCCD_ERROR)
+     {
++        invalidateCaptureSettings();
+         LOGF_INFO("Begin QHYCCD expose failed (%d)", ret);
+         return false;
+     }
++
++    // ASCOM starts the blocking read immediately for READ_DIRECTLY. Otherwise
++    // it waits until the last three seconds, which are handled by the SDK.
++    // Keep the existing countdown behavior for other camera models/simulation.
++    m_SingleFrameReadDelay = m_ExposureRequest;
++    if (!isSimulation() && isQHY5PIIC())
++        m_SingleFrameReadDelay = ret == QHYCCD_READ_DIRECTLY ? 0.0 : std::max(0.0, m_ExposureRequest - 3.0);
++    LOGF_DEBUG("Single-frame trigger result %u, pre-read delay %.3f s", ret, m_SingleFrameReadDelay);
+ 
+     gettimeofday(&ExpStart, nullptr);
+     LOGF_DEBUG("Taking a %.5f seconds frame...", m_ExposureRequest);
+@@ -1365,6 +1429,7 @@
+ 
+     if (std::string(m_CamID) != "QHY5-M-")
+     {
++        invalidateCaptureSettings();
+         int rc = CancelQHYCCDExposingAndReadout(m_CameraHandle);
+         if (rc == QHYCCD_SUCCESS)
+         {
+@@ -1476,6 +1541,7 @@
+ 
+         if (ret != QHYCCD_SUCCESS)
+         {
++            invalidateCaptureSettings();
+             LOGF_ERROR("GetQHYCCDSingleFrame error (%d)", ret);
+             PrimaryCCD.setExposureFailed();
+             return -1;
+@@ -1998,11 +2064,12 @@
+             if (newReadMode != currentQHYReadMode)
+             {
+                 /* change readout mode */
++                invalidateCaptureSettings();
+                 int rc = SetQHYCCDReadMode(m_CameraHandle, newReadMode); // [NEW CODE] declaration int rc removed
+                 if (rc == QHYCCD_SUCCESS)
+                 {
+                     /* re-initialize the camera */
+-                    rc = InitQHYCCD(m_CameraHandle);
++                    rc = initializeCamera();
+                     if (rc != QHYCCD_SUCCESS)
+                     {
+                         LOGF_ERROR("Init Camera failed (%d)", rc);
+@@ -2345,7 +2412,7 @@
+         currentQHYStreamMode = 1;
+         SetQHYCCDStreamMode(m_CameraHandle, currentQHYStreamMode);
+         /* re-initialize camera */
+-        ret = InitQHYCCD(m_CameraHandle);
++        ret = initializeCamera();
+         if(ret != QHYCCD_SUCCESS)
+         {
+             currentQHYStreamMode = 0;
+@@ -2387,6 +2454,7 @@
+ 
+     double uSecs = static_cast<long>(m_ExposureRequest * 950000.0);
+ 
++    invalidateCaptureSettings();
+     SetQHYCCDParam(m_CameraHandle, CONTROL_EXPOSURE, uSecs);
+ 
+     if (HasUSBSpeed)
+@@ -2448,7 +2516,7 @@
+     SetQHYCCDStreamMode(m_CameraHandle, currentQHYStreamMode);
+ 
+     // FIX: Helps for cleaner teardown and prevents camera from staling
+-    InitQHYCCD(m_CameraHandle);
++    initializeCamera();
+ 
+     // Try to set 16bit mode if supported back. Use PrimaryCCD.getBPP as this is what we use to allocate the image buffer.
+     // Instead of doing this here, set the new bitmode when we go into exposure mode out of streaming mode.
+@@ -2568,8 +2636,9 @@
+          * about one second, after which decrease the poll interval
+          */
+         double timeLeft = calcTimeLeft();
++        double readoutLeft = timeLeft - (m_ExposureRequest - m_SingleFrameReadDelay);
+         uint32_t uSecs = 100000;
+-        if (timeLeft > 1.1)
++        if (readoutLeft > 1.1)
+         {
+             /*
+              * For expsoures with more than a second left try
+@@ -2577,11 +2646,11 @@
+              * a full second boundary, which keeps the
+              * count down neat
+              */
+-            timeLeft = round(timeLeft);
++            readoutLeft = round(readoutLeft);
+             uSecs = 1000000;
+         }
+ 
+-        if (timeLeft >= 0)
++        if (readoutLeft >= 0)
+         {
+             PrimaryCCD.setExposureLeft(timeLeft);
+         }
+--- a/qhy_ccd.h
++++ b/qhy_ccd.h
+@@ -32,6 +32,7 @@
+ 
+ class QHYCCD : public INDI::CCD, public INDI::FilterInterface
+ {
++        friend class QHYCaptureTest;
+     public:
+         QHYCCD(const char *m_Name, const char *m_CamID);
+         virtual ~QHYCCD() override = default;
+@@ -417,6 +418,9 @@
+         double calcTimeLeft();
+         // Setup basic CCD parameters on connection
+         bool setupParams();
++        // SDK initialization invalidates settings retained from the previous session.
++        void invalidateCaptureSettings();
++        uint32_t initializeCamera();
+         // Check if the camera is QHY5PII-C model
+         bool isQHY5PIIC();
+         // Call when max filter count is known
+@@ -471,7 +475,12 @@
+         // Exposure progress
+         double m_ExposureRequest;
+         // Last exposure request in microseconds
+-        uint32_t m_LastExposureRequestuS;
++        long m_LastExposureRequestuS {-1};
++        double m_SingleFrameReadDelay {0};
++        bool m_CaptureROIValid {false};
++        uint32_t m_CaptureROIX {0}, m_CaptureROIY {0};
++        uint32_t m_CaptureROIW {0}, m_CaptureROIH {0};
++        uint32_t m_CaptureBinX {0}, m_CaptureBinY {0};
+         struct timeval ExpStart;
+         // Gain
+         double m_LastGainRequest = 1e6;

@@ -1,0 +1,8 @@
+cc171a0757c04f4afbce32f8c06d9b498b5cb4c30029dd254cf1c4cb0f61f73b  /usr/bin/indiserver
+034dad918d26b28cd96c0691e46f9cb139913de72277fc5a2e6f239276884b77  /usr/bin/indi_lx200generic
+a4b76d7dd206d872b2902728f57e2dc26d53c19a06fd39e3baea8d42d7fe08df  /usr/bin/indi_v4l2_ccd
+2559b635148b5813a33fcd10543283dd0246e23176c0f4da42062a62114e2d61  /usr/bin/indi_robo_focus
+e9b1fba45d2bcba9bf3fb8213812f187effb13b7ca99e8f7404aa63e0238a1ff  /usr/bin/indi_gphoto_ccd
+8ad6cf8ac4ec26a9fdf9761b01698f1dcbb749941e53637d16c24f47ca4808fd  /usr/bin/indi_qhy_ccd
+bb0b37a4cc7920018d3642fa7236a215f0b4c819183eced50e2a97330672b387  /usr/local/libexec/indi-qhy-ascom-style/20261031-134911/indi_qhy_ccd
+fa9e7acf45731565e69380459eab2cdfb7dbd2105e1b6d7fddbc3718f375991e  /usr/lib/aarch64-linux-gnu/libqhyccd.so.26.2.1

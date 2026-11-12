@@ -1,0 +1,13 @@
+[Unit]
+Description=INDI Server Auto Start
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env LD_LIBRARY_PATH=/usr/local/lib:/usr/lib/aarch64-linux-gnu /usr/bin/indiserver -v indi_qhy_ccd indi_v4l2_ccd indi_lx200_OnStep indi_robo_focus
+WorkingDirectory=/root
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
