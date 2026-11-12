@@ -21,6 +21,7 @@ MINOR_PLANETS = (
     "Iris Altjira Praamzius Hebe Chiron Teharonhiawako Herculina Amphitrite "
     "Psyche Borasisi Dembowska Interamnia Laetitia Davida Metis Irene"
 ).split()
+COMETS = ("1P/Halley", "2P/Encke", "12P/Pons-Brooks")
 
 
 def normalize_name(name):
@@ -34,7 +35,12 @@ def catalog_sources():
             for line in catalog:
                 ra, dec, aliases = line.strip().split("--", 2)
                 yield aliases.split("|"), model, kind, float(ra), float(dec)
-    for names, model, kind in ((PLANETS, "SSO", "SSO"), (MINOR_PLANETS, "mpc_asteroid", "MPl")):
+    moving_sources = (
+        (PLANETS, "SSO", "SSO"),
+        (MINOR_PLANETS, "mpc_asteroid", "MPl"),
+        (COMETS, "mpc_comet", "Com"),
+    )
+    for names, model, kind in moving_sources:
         for name in names:
             # Stellarium computes the position of moving targets for the observer's time.
             yield [f"NAME {name}"], model, kind, None, None

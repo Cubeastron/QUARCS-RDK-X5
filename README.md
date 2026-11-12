@@ -85,3 +85,5 @@ python3 web/tools/build_sky_font.py \
 | Vue 前端与 Stellarium Web Engine | [`71c39ec`](https://github.com/QHYCCD-QUARCS/QUARCS_stellarium-web-engine/tree/71c39ecf7301c4f7a4e325539a2350876a6e4744) |
 
 QUARCS 的上游许可声明保留在各组件目录。INDI 驱动的许可见 `indi/licenses/`。板上的镜像、设备私有配置、TLS 私钥和离线星表数据留在设备或本地备份中。
+
+星图引擎的 JS 和 WASM 从上表的 `71c39ec` 构建。在上游源码目录应用本仓库的 `deploy/stellarium-localized-orbital-labels.patch`，使用 Emscripten 3.1.64 和 SCons 执行 `emscons scons -j8 mode=release werror=no`，再将 `build/stellarium-web-engine.js` 和 `build/stellarium-web-engine.wasm` 一起复制到本仓库的 `web/src/assets/js/`。补丁只在绘制时翻译小行星和彗星的名称，星表标识由原引擎提供。

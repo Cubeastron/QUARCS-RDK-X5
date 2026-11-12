@@ -1008,6 +1008,18 @@
       "zh": "风车星系",
       "names": ["M 101", "NGC 5457", "Pinwheel Galaxy"],
       "canvasLabel": "M 101"
+    },
+    {
+      "zh": "哈雷彗星",
+      "names": ["1P/Halley", "Halley"]
+    },
+    {
+      "zh": "恩克彗星",
+      "names": ["2P/Encke", "Encke"]
+    },
+    {
+      "zh": "庞斯-布鲁克斯彗星",
+      "names": ["12P/Pons-Brooks", "Pons-Brooks"]
     }
   ]
 }

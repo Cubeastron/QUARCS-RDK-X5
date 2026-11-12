@@ -1,0 +1,44 @@
+diff --git a/SConstruct b/SConstruct
+--- a/SConstruct
++++ b/SConstruct
+@@ -114,7 +114,5 @@
+     'ALLOC_NORMAL',
+     'GL',
+     'UTF8ToString',
+-    '_free',
+-    '_malloc',
+     'addFunction',
+     'allocate',
+@@ -149,5 +147,5 @@
+     '-s', 'NO_EXIT_RUNTIME=1',
+     '-s', 'SUPPORT_LONGJMP=emscripten',
+-    '-s', '"EXPORTED_FUNCTIONS=[]"',
+-    '-s', '"EXTRA_EXPORTED_RUNTIME_METHODS=[%s]"' % extra_exported,
++    '-s', 'EXPORTED_FUNCTIONS=_free,_malloc',
++    '-s', '"EXPORTED_RUNTIME_METHODS=[%s]"' % extra_exported,
+     '-s', 'FILESYSTEM=0',
+diff --git a/src/modules/comets.c b/src/modules/comets.c
+--- a/src/modules/comets.c
++++ b/src/modules/comets.c
+@@ -490,7 +490,8 @@
+                                       hints_mag_offset))) {
+         if (selected)
+             vec4_set(label_color, 1, 1, 1, 1);
+-        labels_add_3d(comet->name, FRAME_ICRF, comet->pvo[0], false, size + 4,
++        labels_add_3d(sys_translate("sky", comet->name),
++            FRAME_ICRF, comet->pvo[0], false, size + 4,
+             FONT_SIZE_BASE - 2, label_color, 0, 0,
+             TEXT_SEMI_SPACED | TEXT_BOLD | (selected ? 0 : TEXT_FLOAT),
+             0, obj);
+diff --git a/src/modules/minorplanets.c b/src/modules/minorplanets.c
+--- a/src/modules/minorplanets.c
++++ b/src/modules/minorplanets.c
+@@ -354,6 +354,7 @@
+         if (selected)
+             vec4_set(label_color, 1, 1, 1, 1);
+-        labels_add_3d(mplanet->name, FRAME_ICRF, pvo[0], false, size + 4,
++        labels_add_3d(sys_translate("sky", mplanet->name),
++              FRAME_ICRF, pvo[0], false, size + 4,
+               FONT_SIZE_BASE - 1, label_color, 0, 0,
+               TEXT_SEMI_SPACED | TEXT_BOLD | (selected ? 0 : TEXT_FLOAT),
+               0, obj);
