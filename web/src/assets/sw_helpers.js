@@ -137,7 +137,7 @@ const swh = {
       onReady: function (lstel) {
         generatedSkyObjects.clear()
         const fontPath = process.env.BASE_URL + 'fonts/'
-        Promise.all([
+        const fontsReady = Promise.all([
           installSkyFont(lstel, fontPath, 'Regular', chineseRegularFont, chineseBoldFont),
           installSkyFont(lstel, fontPath, 'Bold', chineseBoldFont, chineseRegularFont)
         ]).then(() => {
@@ -153,7 +153,7 @@ const swh = {
         Vue.prototype.$selectionLayer = lstel.createLayer({ id: 'slayer', z: 50, visible: true })
         Vue.prototype.$observingLayer = lstel.createLayer({ id: 'obslayer', z: 40, visible: true })
         Vue.prototype.$skyHintsLayer = lstel.createLayer({ id: 'skyhintslayer', z: 38, visible: true })
-        callBackOnDone()
+        callBackOnDone(fontsReady)
       }
     })
   },

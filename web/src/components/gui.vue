@@ -337,7 +337,7 @@
 
     <transition name="ToolBar">
       <div v-show="isStellariumMode" class="TopLeft-Info">
-        <p>{{ PositionInfo }}</p>
+        <p v-if="PositionInfo">{{ $t('Lat & Long') }}: {{ PositionInfo }}</p>
       </div>
     </transition>
 
@@ -1959,7 +1959,7 @@ export default {
     },
 
     ShowPositionInfo(lat, lng) {
-      this.PositionInfo = 'Lat & Long: ' + lat + ', ' + lng;
+      this.PositionInfo = lat + ', ' + lng;
     },
 
     // calcWhiteBalanceGains() {
