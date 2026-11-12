@@ -106,6 +106,8 @@ DDDate.prototype.setMJD = function (mjd) {
   this.setJD(mjd + 2400000.5)
 }
 
+const generatedSkyObjects = new Map()
+
 const swh = {
   initStelWebEngine: function (store, wasmFile, canvasElem, getLocale, callBackOnDone) {
     let chineseFontsReady = false
@@ -116,6 +118,7 @@ const swh = {
         return chineseFontsReady && getLocale() === 'cn' ? translateSkyLabel(domain, str) : str
       },
       onReady: function (lstel) {
+        generatedSkyObjects.clear()
         const fontPath = process.env.BASE_URL + 'fonts/'
         Promise.all([
           lstel.setFont('regular', fontPath + 'Roboto-Regular.ttf')
@@ -377,8 +380,12 @@ const swh = {
 
   createSkySourceObject: function (source) {
     let data = source
+    let key
     const { ra, de } = source.model_data || {}
     if (source.coordinate_unit === 'rad' && Number.isFinite(ra) && Number.isFinite(de)) {
+      key = source.model + ':' + source.names[0]
+      if (generatedSkyObjects.has(key)) return generatedSkyObjects.get(key)
+
       // The local catalog uses radians. Stellarium's object constructors use degrees.
       data = {
         ...source,
@@ -388,7 +395,12 @@ const swh = {
         data.names = ['NAME ' + source.names[0], ...source.names]
       }
     }
-    return Vue.prototype.$stel.createObj(source.model, data)
+    const obj = Vue.prototype.$stel.createObj(source.model, data)
+    if (obj) {
+      Vue.prototype.$selectionLayer.add(obj)
+      if (key) generatedSkyObjects.set(key, obj)
+    }
+    return obj
   },
 
   lookupSkySourceByName: function (name) {

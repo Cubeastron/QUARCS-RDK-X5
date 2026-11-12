@@ -8551,7 +8551,6 @@ export default {
           let obj = swh.skySource2SweObj(ss)
           if (!obj) {
             obj = swh.createSkySourceObject(ss)
-            if (obj) this.$selectionLayer.add(obj)
           }
           if (!obj) {
             console.warn("Can't find object in SWE: " + ss.names[0])
