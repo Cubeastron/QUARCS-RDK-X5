@@ -157,7 +157,7 @@
           </div>
         </button>
       </transition>
-      <mount-control-panel v-show="showFloatingBox" style="position: absolute; top: 50px; right: 10px; "
+      <mount-control-panel ref="mountControlPanel" v-show="showFloatingBox" style="position: absolute; top: 50px; right: 10px; "
         class="get-click"></mount-control-panel>
     </div>
 
@@ -1736,8 +1736,11 @@ export default {
     },
 
     ConfirmDialogToDo() {
+      if (!this.ConfirmDialog && this.ConfirmToDo === 'MountSYNC') return;
       this.ConfirmDialog = false;
-      if (this.ConfirmToDo === 'Refresh') {
+      if (this.ConfirmToDo === 'MountSYNC') {
+        this.$refs.mountControlPanel?.MountSYNC();
+      } else if (this.ConfirmToDo === 'Refresh') {
         window.location.reload();
       } else if (this.ConfirmToDo === 'StopGuiding') {
         this.$bus.$emit('AppSendMessage', 'Vue_Command', 'GuiderSwitch:false');

@@ -86,6 +86,7 @@
           </div>
         </button>
         <button class="custom-button btn-sync no-select" :class="{'processing': isSyncProcessing, 'error-animation': isErrorSync}" @click="handleMountSYNC"
+          :aria-label="$t('Reset home position')" :title="$t('Reset home position')"
           data-testid="mcp-btn-sync" :data-processing="isSyncProcessing">
           <div style="display: flex; justify-content: center; align-items: center;">
             <img src="@/assets/images/svg/ui/Sync.svg" height="20px"
@@ -407,6 +408,11 @@ export default {
       }, 1000);
     },
     MountSYNC() {
+      if (!this.isMountConnected) {
+        this.showErrorAnimation('sync');
+        return;
+      }
+      if (this.isSyncProcessing) return;
       const check = this.$canUseDevice('Mount', 'MountSync');
       if (!check.allowed) return;
       console.log('QHYCCD | SYNC');
@@ -686,7 +692,8 @@ export default {
         this.showErrorAnimation('sync');
         return;
       }
-      this.MountSYNC();
+      if (this.isSyncProcessing) return;
+      this.$bus.$emit('ShowConfirmDialog', 'Confirm', 'Reset the mount home position?', 'MountSYNC');
     },
     
     handleSolveSYNC() {
