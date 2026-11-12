@@ -1,0 +1,19 @@
+diff --git a/src/modules/constellations.c b/src/modules/constellations.c
+index 7b39637..c1f1dc5 100644
+--- a/src/modules/constellations.c
++++ b/src/modules/constellations.c
+@@ -844,6 +844,14 @@ static int render_label(constellation_t *con, const painter_t *painter_,
+         snprintf(label, sizeof(label), "%s", con->info.id);
+     }
+
++    const char western_prefix[] = "CON western ";
++    if (strncmp(con->info.id, western_prefix, sizeof(western_prefix) - 1) == 0) {
++        const char *iau = con->info.id + sizeof(western_prefix) - 1;
++        const char *translated = sys_translate("western-constellation", iau);
++        if (strcmp(translated, iau) != 0)
++            snprintf(label, sizeof(label), "%s", translated);
++    }
++
+     max_label_len = u8_split_line(label, sizeof(label), label, 15);
+
+     if (!should_render_label(con, max_label_len, &painter, selected))

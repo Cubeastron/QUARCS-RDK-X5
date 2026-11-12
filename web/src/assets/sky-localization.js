@@ -28,6 +28,7 @@ export function localizedSkySourceType (type, locale) {
 }
 
 export function translateSkyLabel (domain, label) {
+  if (domain === 'western-constellation') return constellationCodes.get(label.toLowerCase()) || label
   if (domain === 'gui') {
     for (const labels of [catalog.directions, catalog.gridLabels]) {
       if (Object.prototype.hasOwnProperty.call(labels, label)) return labels[label]

@@ -84,11 +84,11 @@ python3 web/tools/build_sky_font.py 'NotoSansSC[wght].ttf'
 
 QUARCS 的上游许可声明保留在各组件目录。INDI 驱动的许可见 `indi/licenses/`。板上的镜像、设备私有配置、TLS 私钥和离线星表数据留在设备或本地备份中。
 
-星图引擎的 JS 和 WASM 从上表的 `71c39ec` 构建。在上游源码目录应用本仓库的 `deploy/stellarium-localized-orbital-labels.patch` 和 `deploy/stellarium-embedded-sky-fonts.patch`，把 `web/public/fonts/QUARCSSkySC-*.ttf` 复制到上游的 `data/font/`。生成资源后，使用 Emscripten 3.1.64 和 SCons 构建。
+星图引擎的 JS 和 WASM 从上表的 `71c39ec` 构建。在上游源码目录应用本仓库的 `deploy/stellarium-localized-orbital-labels.patch`、`deploy/stellarium-embedded-sky-fonts.patch` 和 `deploy/stellarium-localized-constellation-labels.patch`，把 `web/public/fonts/QUARCSSkySC-*.ttf` 复制到上游的 `data/font/`。生成资源后，使用 Emscripten 3.1.64 和 SCons 构建。
 
 ```sh
 python3 -c 'import runpy; runpy.run_path("./tools/make-assets.py", run_name="__main__")'
 emscons scons -j8 mode=release werror=no
 ```
 
-将 `build/stellarium-web-engine.js` 和 `build/stellarium-web-engine.wasm` 一起复制到本仓库的 `web/src/assets/js/`。引擎在创建渲染器时注册内置中文字体，绘制小行星和彗星时翻译名称。
+将 `build/stellarium-web-engine.js` 和 `build/stellarium-web-engine.wasm` 一起复制到本仓库的 `web/src/assets/js/`。引擎在创建渲染器时注册内置中文字体，绘制时按星座缩写查找西方星座译名，并翻译小行星和彗星名称。
