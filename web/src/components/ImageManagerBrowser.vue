@@ -12,7 +12,7 @@
           <button class="custom-button btn-MoveUSB no-select" @click="MoveFileToUSB" :disabled="!hasUSBDevice" data-testid="imp-btn-move-file-to-usb">
             <div class="icon-center"><img src="@/assets/images/svg/ui/USB Flash Drive.svg" height="20px" style="min-height: 20px; pointer-events: none;"></div>
           </button>
-          <button class="custom-button btn-Delete no-select" @click="DeleteBtnClick" data-testid="imp-btn-delete-btn-click">
+          <button class="custom-button btn-Delete no-select" @click="DeleteBtnClick" :disabled="!!deleteRequest" data-testid="imp-btn-delete-btn-click">
             <div class="icon-center"><img src="@/assets/images/svg/ui/delete.svg" height="20px" style="min-height: 20px; pointer-events: none;"></div>
           </button>
           <button class="custom-button btn-Download no-select" @click="DownloadSelected" data-testid="imp-btn-download-selected"><v-icon color="rgba(255, 255, 255)">mdi-download</v-icon></button>
@@ -97,7 +97,7 @@
                     <button class="file-action-btn" @click.stop="openFile(file)">{{ $t('Open') }}</button>
                     <button class="file-action-btn" @click.stop="downloadSingleFile(file)">{{ $t('Download') }}</button>
                     <button class="file-action-btn" @click.stop="moveSingleFile(file)" :disabled="!hasUSBDevice">USB</button>
-                    <button class="file-action-btn danger" @click.stop="prepareDeleteFiles([file.imageName])">{{ $t('Delete') }}</button>
+                    <button class="file-action-btn danger" @click.stop="prepareDeleteFiles([file.imageName])" :disabled="!!deleteRequest">{{ $t('Delete') }}</button>
                   </div>
                 </div>
               </div>
@@ -268,6 +268,8 @@ export default {
       right: 0,
       top: 40,
       showDeleteConfirmDialog: false,
+      deleteRequest: null,
+      refreshAfterDelete: false,
       isNoFolders: true,
       ImageFile: 'Capture Image',
       fileTypeIndex: 0,
@@ -390,6 +392,7 @@ export default {
     this.$bus.$on('USB_Name_Sapce', this.updateUSBdata);
     this.$bus.$on('ClearUSBList', this.clearUSBList);
     this.$bus.$on('DownloadManifest', this.onDownloadManifest);
+    this.$bus.$on('DeleteFileResult', this.onDeleteFileResult);
     this.$bus.$on('ImageFilesName', this.onImageFilesName);
   },
   mounted() {
@@ -401,6 +404,8 @@ export default {
     this.$bus.$off('USB_Name_Sapce', this.updateUSBdata);
     this.$bus.$off('ClearUSBList', this.clearUSBList);
     this.$bus.$off('DownloadManifest', this.onDownloadManifest);
+    this.$bus.$off('DeleteFileResult', this.onDeleteFileResult);
+    if (this.deleteRequest) clearTimeout(this.deleteRequest.timer);
     this.$bus.$off('ImageFilesName', this.onImageFilesName);
     if (typeof window !== 'undefined') window.removeEventListener('resize', this.updateViewportWidth);
   },
@@ -641,7 +646,7 @@ export default {
     DeleteBtnClick() {
       const scope = this.buildDeleteScope();
       if (!scope) {
-        this.$bus.$emit('SendConsoleLogMsg', this.$t('No items selected for deletion.'), 'warning');
+        this.$bus.$emit('showMsgBox', this.$t('No items selected for deletion.'), 'warning');
         return;
       }
       this.pendingDeleteScope = scope;
@@ -653,21 +658,43 @@ export default {
       this.showDeleteConfirmDialog = true;
     },
     confirmDelete() {
-      const scope = this.pendingDeleteScope || this.buildDeleteScope();
-      if (!scope) {
-        this.closeDeleteConfirmDialog();
-        return;
-      }
-      if (scope.type === 'files') this.deleteFiles(scope.names);
-      else this.deleteFolderGroups(scope.folderNames);
+      const scope = this.pendingDeleteScope;
       this.closeDeleteConfirmDialog();
+      if (!scope || this.deleteRequest) return;
+      const items = scope.type === 'files' && this.currentFolder
+        ? scope.names.map(name => this.getFolderName(this.currentFolder) + '/' + name)
+        : scope.folderNames;
+      if (!items || !items.length) return;
+      const request = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+      const timer = setTimeout(() => {
+        this.deleteRequest = null;
+        this.$bus.$emit('showMsgBox', this.$t('The server did not confirm deletion.'), 'warning');
+        this.refreshDeletedImages();
+      }, 15000);
+      this.deleteRequest = { request, timer };
+      this.$bus.$emit('AppSendMessage', 'Vue_Command', 'DeleteFile:' + JSON.stringify({
+        request, category: this.getCurrentFolderTypeName(), items: [...new Set(items)],
+      }));
+    },
+    onDeleteFileResult(result) {
+      if (!this.deleteRequest || result.request !== this.deleteRequest.request) return;
+      clearTimeout(this.deleteRequest.timer);
+      this.deleteRequest = null;
+      if (result.failed) {
+        this.$bus.$emit('showMsgBox', this.$t('Could not delete {0} item(s).', [result.failed]), 'error');
+      } else {
+        this.$bus.$emit('showMsgBox', this.$t('Images deleted.'), 'success');
+      }
+      this.refreshDeletedImages();
+    },
+    refreshDeletedImages() {
+      this.folderFilesCache = {};
+      this.refreshAfterDelete = true;
+      this.$bus.$emit('AppSendMessage', 'Vue_Command', 'ShowAllImageFolder');
     },
     closeDeleteConfirmDialog() {
       this.showDeleteConfirmDialog = false;
       this.pendingDeleteScope = null;
-    },
-    DeleteFolders() {
-      this.confirmDelete();
     },
     buildFolderPayload(folderNames) {
       return '{' + folderNames.join(';') + ';}';
@@ -676,34 +703,6 @@ export default {
       if (!this.currentFolder) return '{}';
       const folderName = this.getFolderName(this.currentFolder);
       return '{' + fileNames.map((name) => folderName + '/' + name).join(';') + ';}';
-    },
-    deleteFiles(fileNames) {
-      if (!this.currentFolder || !Array.isArray(fileNames) || fileNames.length === 0) return;
-      const uniqueNames = Array.from(new Set(fileNames));
-      const payload = this.buildFilePayload(uniqueNames);
-      this.$bus.$emit('AppSendMessage', 'Vue_Command', 'DeleteFile:' + this.getCurrentFolderTypeName() + payload);
-      this.$bus.$emit('SendConsoleLogMsg', 'Delete File:' + this.getCurrentFolderTypeName() + payload, 'info');
-      this.currentFolderFiles = this.currentFolderFiles.filter((file) => uniqueNames.indexOf(file.imageName) === -1);
-      if (!this.currentFolderFiles.find((file) => file.imageName === this.currentFileName)) {
-        this.currentFileName = this.currentFolderFiles.length > 0 ? this.currentFolderFiles[0].imageName : '';
-      }
-      this.syncCurrentFolderCache();
-      this.updateFolderFileCount(this.currentFolderKey, this.currentFolderFiles.length);
-    },
-    deleteFolderGroups(folderNames) {
-      if (!Array.isArray(folderNames) || folderNames.length === 0) return;
-      const uniqueNames = Array.from(new Set(folderNames));
-      const typeName = this.getCurrentFolderTypeName();
-      const payload = this.buildFolderPayload(uniqueNames);
-      this.$bus.$emit('AppSendMessage', 'Vue_Command', 'DeleteFile:' + typeName + payload);
-      this.$bus.$emit('SendConsoleLogMsg', 'Deleted folders:' + uniqueNames.join(','), 'info');
-      const targetList = this.getFoldersByTypeName(typeName).filter((folder) => uniqueNames.indexOf(this.getFolderName(folder)) === -1);
-      if (typeName === 'CaptureImage') this.CaptureImageFolders = targetList;
-      else if (typeName === 'ScheduleImage') this.ScheduleImageFolders = targetList;
-      else this.SolveFailedImageFolders = targetList;
-      this.syncImageFoldersFromType();
-      if (uniqueNames.indexOf(this.extractFolderNameFromKey(this.currentFolderKey)) >= 0) this.clearCurrentFolder();
-      this.ensureCurrentFolderSelection(false);
     },
     buildMoveScope() {
       if (this.selectedFolders.length > 0) return { type: 'folders', folderNames: this.selectedFolders.map((folder) => this.getFolderName(folder)) };
@@ -1168,7 +1167,9 @@ export default {
         this.SolveFailedImageFolders = this.mergeFolderSelection(parsedData.SolveFailedFolderList, this.SolveFailedImageFolders);
       }
       this.syncImageFoldersFromType();
-      this.ensureCurrentFolderSelection(!unchanged);
+      const forceReload = !unchanged || this.refreshAfterDelete;
+      this.refreshAfterDelete = false;
+      this.ensureCurrentFolderSelection(forceReload);
     },
     mergeFolderSelection(newList, oldList) {
       if (!Array.isArray(oldList) || oldList.length === 0) return newList;
@@ -1190,8 +1191,9 @@ export default {
       const solveFailedFolderList = [];
       for (let i = 0; i < captureFolder.length - 1; i += 1) captureFolderList.push({ imageDate: captureFolder[i], imageName: '', isSelected: false, fileCount: null });
       for (let i = 0; i < scheduleFolder.length - 1; i += 1) {
-        const data = scheduleFolder[i].split('(');
-        scheduleFolderList.push({ imageDate: data[0], imageName: data[1] ? '(' + data[1] : '', isSelected: false, fileCount: null });
+        const name = scheduleFolder[i];
+        const suffix = name.indexOf('(');
+        scheduleFolderList.push({ imageDate: suffix < 0 ? name : name.slice(0, suffix), imageName: suffix < 0 ? '' : name.slice(suffix), isSelected: false, fileCount: null });
       }
       for (let i = 0; i < solveFailedFolder.length - 1; i += 1) solveFailedFolderList.push({ imageDate: solveFailedFolder[i], imageName: '', isSelected: false, fileCount: null });
       captureFolderList.sort((a, b) => parseFloat(a.imageDate) - parseFloat(b.imageDate));

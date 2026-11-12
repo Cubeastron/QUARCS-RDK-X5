@@ -1751,7 +1751,7 @@ public:
      * @brief 删除图片文件
      * @param DelImgPath 路径列表
      */
-    void DeleteImage(QStringList DelImgPath);
+    int DeleteImage(const QString &category, const QStringList &items);
 
     /**
      * @brief 列举所有文件（用于前端）

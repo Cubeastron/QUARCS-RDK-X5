@@ -618,40 +618,51 @@ int MainWindow::saveImageFile(const QString &sourcePath,
     return 0;
 }
 
-void MainWindow::DeleteImage(QStringList DelImgPath)
+int MainWindow::DeleteImage(const QString &category, const QStringList &items)
 {
-    std::string password = "quarcs"; // sudo 密码
-    for (int i = 0; i < DelImgPath.size(); i++)
+    if (items.isEmpty() || (category != "CaptureImage" && category != "ScheduleImage" &&
+                           category != "solveFailedImage"))
+        return std::max(1, items.size());
+
+    const QString base = QDir(QString::fromStdString(ImageSaveBasePath)).canonicalPath();
+    if (base.isEmpty())
+        return items.size();
+    const QString root = QDir(base).filePath(category);
+    const QFileInfo rootInfo(root);
+    if (!rootInfo.isDir() || rootInfo.canonicalFilePath() != root)
+        return items.size();
+
+    int failed = 0;
+    for (const QString &item : items)
     {
-        if (i < DelImgPath.size())
+        const QStringList components = item.split('/');
+        if (components.size() > 2 || QDir::isAbsolutePath(item) || item.contains(QChar::Null) ||
+            components.contains(QString()) || components.contains(".") || components.contains(".."))
         {
-            QString path = DelImgPath[i].trimmed();
-            std::string pathForRm = path.toStdString();
-            if (!path.isEmpty() && !QDir::isAbsolutePath(path))
-                pathForRm = "./" + pathForRm;
-            std::ostringstream commandStream;
-            commandStream << "echo '" << password << "' | sudo -S rm -rf \"" << pathForRm << "\"";
-            std::string command = commandStream.str();
-
-            Logger::Log("DeleteImage | Deleted command:" + QString::fromStdString(command).toStdString(), LogLevel::INFO, DeviceType::MAIN);
-
-            // 执行系统命令删除文件
-            int result = system(command.c_str());
-
-            if (result == 0)
-            {
-                Logger::Log("DeleteImage | Deleted file:" + DelImgPath[i].toStdString(), LogLevel::INFO, DeviceType::MAIN);
-            }
-            else
-            {
-                Logger::Log("DeleteImage | Failed to delete file:" + DelImgPath[i].toStdString(), LogLevel::INFO, DeviceType::MAIN);
-            }
+            ++failed;
+            continue;
         }
-        else
+        const QString path = QDir(root).filePath(item);
+        const QFileInfo target(path);
+        if (!target.exists() && !target.isSymLink())
+            continue;
+
+        bool removed = false;
+        if (target.canonicalFilePath() == path)
         {
-            Logger::Log("DeleteImage | Index out of range: " + std::to_string(i), LogLevel::WARNING, DeviceType::MAIN);
+            if (target.isFile())
+                removed = QFile::remove(path);
+            else if (target.isDir() && components.size() == 1)
+                removed = QDir(path).removeRecursively();
+        }
+        if (!removed)
+        {
+            ++failed;
+            Logger::Log("DeleteImage | Failed to delete " + path.toStdString(),
+                        LogLevel::WARNING, DeviceType::MAIN);
         }
     }
+    return failed;
 }
 
 std::string MainWindow::GetAllFile()

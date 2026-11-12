@@ -613,6 +613,10 @@ export default {
                 }
                 break;
 
+              case 'DeleteFileResult':
+                this.$bus.$emit('DeleteFileResult', JSON.parse(data.message.slice('DeleteFileResult:'.length)));
+                break;
+
 
               case 'USBCheck':
                 // 首先发送清空信号

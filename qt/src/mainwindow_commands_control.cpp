@@ -1158,13 +1158,31 @@ bool MainWindow::handleFileAndStorageCommand(const QString &message, const QStri
     }
     else if (parts[0].trimmed() == "DeleteFile")
     {
-        Logger::Log("DeleteFile ...", LogLevel::DEBUG, DeviceType::MAIN);
-        QString ImagePathString = message; // 创建副本
-        ImagePathString.replace("DeleteFile:", "");
-
-        QStringList ImagePath = parseString(ImagePathString.toStdString(), ImageSaveBasePath);
-        DeleteImage(ImagePath);
-        Logger::Log("DeleteFile finish!", LogLevel::DEBUG, DeviceType::MAIN);
+        const QString payload = message.mid(QStringLiteral("DeleteFile:").size());
+        QString request;
+        QString category;
+        QStringList items;
+        if (payload.startsWith('{'))
+        {
+            const QJsonObject data = QJsonDocument::fromJson(payload.toUtf8()).object();
+            request = data.value("request").toString();
+            category = data.value("category").toString();
+            for (const QJsonValue &item : data.value("items").toArray())
+                items.append(item.toString());
+        }
+        else
+        {
+            // Keep the original command accepted for already-open clients.
+            const int brace = payload.indexOf('{');
+            if (brace > 0 && payload.endsWith('}'))
+            {
+                category = payload.left(brace);
+                items = payload.mid(brace + 1, payload.size() - brace - 2).split(';', Qt::SkipEmptyParts);
+            }
+        }
+        items.removeDuplicates();
+        const QJsonObject result{{"request", request}, {"failed", DeleteImage(category, items)}};
+        emit wsThread->sendMessageToClient("DeleteFileResult:" + QJsonDocument(result).toJson(QJsonDocument::Compact));
     }
     else if (message == "USBCheck")
     {
