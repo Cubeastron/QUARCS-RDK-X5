@@ -9,7 +9,7 @@
 <template>
   <div class="bottom-button" :class="{on: toggled}" data-testid="ui-bottom-button-root">
     <a v-on:click='clicked'>
-      <img :src="img" :alt="img_alt"/>
+      <img :src="img" :alt="label"/>
     </a>
     <div class="hint">{{label}}</div>
   </div>
@@ -52,7 +52,7 @@
 <script>
 export default {
   name: 'bottom-button',
-  props: ['label', 'img', 'toggled', 'img_alt'],
+  props: ['label', 'img', 'toggled'],
   methods: {
     clicked: function () {
       var b = !this.toggled

@@ -21,7 +21,6 @@
       :label="$t('Constellations')"
       v-if="$store.state.showConstellationsLinesButton !== false"
       :img="require('@/assets/images/btn-cst-lines.svg')"
-      img_alt="Constellations Button"
       :toggled="$store.state.stel.constellations.lines_visible"
       @clicked="(b) => { $stel.core.constellations.lines_visible = b; $stel.core.constellations.labels_visible = b }"
     >
@@ -33,7 +32,6 @@
       :label="$t('Constellations Art')"
       v-if="$store.state.showConstellationsArtButton !== false"
       :img="require('@/assets/images/btn-cst-art.svg')"
-      img_alt="Constellations Art Button"
       :toggled="$store.state.stel.constellations.images_visible"
       @clicked="(b) => { $stel.core.constellations.images_visible = b }"
     >
@@ -45,7 +43,6 @@
       :label="$t('Atmosphere')"
       v-if="$store.state.showAtmosphereButton !== false"
       :img="require('@/assets/images/btn-atmosphere.svg')"
-      img_alt="Atmosphere Button"
       :toggled="$store.state.stel.atmosphere.visible"
       @clicked="(b) => { $stel.core.atmosphere.visible = b }"
     >
@@ -57,7 +54,6 @@
       :label="$t('Landscape')"
       v-if="$store.state.showLandscapeButton !== false"
       :img="require('@/assets/images/btn-landscape.svg')"
-      img_alt="Landscape Button"
       :toggled="$store.state.stel.landscapes.visible"
       @clicked="(b) => { $stel.core.landscapes.visible = b }"
     >
@@ -69,7 +65,6 @@
       :label="$t('Azimuthal Grid')"
       v-if="$store.state.showAzimuthalGridButton !== false"
       :img="require('@/assets/images/btn-azimuthal-grid.svg')"
-      img_alt="Azimuthal Button"
       :toggled="$store.state.stel.lines.azimuthal.visible"
       @clicked="(b) => { $stel.core.lines.azimuthal.visible = b }"
     >
@@ -81,7 +76,6 @@
       :label="$t('Equatorial Grid')"
       v-if="$store.state.showEquatorialGridButton !== false"
       :img="require('@/assets/images/btn-equatorial-grid.svg')"
-      img_alt="Equatorial Grid Button"
       :toggled="$store.state.stel.lines.equatorial_jnow.visible"
       @clicked="(b) => { $stel.core.lines.equatorial_jnow.visible = b }"
     >
@@ -93,7 +87,6 @@
       :label="$t('Equatorial J2000 Grid')"
       v-if="$store.state.showEquatorialJ2000GridButton !== false"
       :img="require('@/assets/images/btn-equatorial-grid.svg')"
-      img_alt="Equatorial J2000 Grid Button"
       :toggled="$store.state.stel.lines.equatorial.visible"
       @clicked="(b) => { $stel.core.lines.equatorial.visible = b }"
     >
@@ -104,7 +97,6 @@
       :data-state="$store.state.stel.dsos.visible ? 'on' : 'off'"
       :label="$t('Deep Sky Objects')"
       :img="require('@/assets/images/btn-nebulae.svg')"
-      img_alt="Deep Sky Objects Button"
       class="mr-auto"
       :toggled="$store.state.stel.dsos.visible"
       @clicked="(b) => { $stel.core.dsos.visible = b }"

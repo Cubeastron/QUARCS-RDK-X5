@@ -37,7 +37,7 @@
       </div>
     </v-card-text>
     <v-card-actions>
-      <v-spacer></v-spacer><v-btn class="blue--text darken-1" text @click.native="$store.state.showPlanetsVisibilityDialog = false" data-testid="ui-planets-visibility-btn-close">Close</v-btn>
+      <v-spacer></v-spacer><v-btn class="blue--text darken-1" text @click.native="$store.state.showPlanetsVisibilityDialog = false" data-testid="ui-planets-visibility-btn-close">{{ $t('Close') }}</v-btn>
     </v-card-actions>
   </v-card>
 </v-dialog>
@@ -47,6 +47,7 @@
 
 import Moment from 'moment'
 import swh from '@/assets/sw_helpers.js'
+import { localizedSkySourceName } from '@/assets/sky-localization'
 
 export default {
   data: function () {
@@ -71,7 +72,8 @@ export default {
       return utc.format('HH:mm')
     },
     cleanName: function (obj) {
-      return swh.cleanupOneSkySourceName(obj.designations()[0])
+      const names = obj.designations()
+      return localizedSkySourceName({ names }, this.$i18n.locale) || swh.cleanupOneSkySourceName(names[0])
     },
     planetBackgroundStr: function (obj) {
       const d = new Date()

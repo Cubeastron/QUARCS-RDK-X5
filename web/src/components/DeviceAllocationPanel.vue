@@ -12,14 +12,14 @@
         <div class="panel-title-wrap">
           <span class="panel-title">{{ $t('Device Allocation') }}</span>
           <span class="panel-subtitle">
-            {{ selectedDeviceType ? $t('DeviceAllocation_SelectedSlot', { slot: selectedDeviceType }) : $t('DeviceAllocation_StepHint') }}
+            {{ selectedDeviceType ? $t('DeviceAllocation_SelectedSlot', { slot: deviceTypeLabel(selectedDeviceType) }) : $t('DeviceAllocation_StepHint') }}
           </span>
         </div>
-        <span class="panel-close"
+        <button type="button" class="panel-close"
               @click.stop="ClosePanel"
               data-testid="dap-act-close-panel">
-          {{ $t('CLOSE') }}
-        </span>
+          {{ $t('Close') }}
+        </button>
       </div>
 
       <div class="panel-body">
@@ -29,7 +29,7 @@
             <DevicePicker
               v-for="(deviceType, index) in DeviceTypes"
               :key="index"
-              :DeviceType="deviceType.DeviceType"
+              :DeviceType="deviceTypeLabel(deviceType.DeviceType)"
               :DeviceName="deviceType.DeviceName"
               :DeviceBind="deviceType.isBind"
               :PickerIndex="index"
@@ -63,11 +63,11 @@
               }"
             >
               <div class="device-main-row">
-                <span class="device-type-tag">{{ device.DeviceType || $t('Device') }}</span>
+                <span class="device-type-tag">{{ deviceTypeLabel(device.DeviceType) }}</span>
                 <span class="device-name-text">{{ device.DeviceName }}</span>
               </div>
               <span v-if="getDeviceOccupant(device)" class="device-meta">
-                {{ canSwapWithSelectedRole(device) ? $t('DeviceAllocation_SwappableWith') : $t('DeviceAllocation_BoundTo') }} {{ getDeviceOccupant(device) }}
+                {{ canSwapWithSelectedRole(device) ? $t('DeviceAllocation_SwappableWith') : $t('DeviceAllocation_BoundTo') }} {{ deviceTypeLabel(getDeviceOccupant(device)) }}
               </span>
             </li>
             <li v-if="candidateDeviceList.length === 0" class="device-empty">
@@ -133,6 +133,10 @@ export default {
     this.$bus.$on('loadBindDeviceTypeList',this.loadBindDeviceTypeList);
   },
   methods: {
+    deviceTypeLabel(type) {
+      const key = 'DeviceAllocationTypes.' + type;
+      return this.$te(key, 'en') ? this.$t(key) : (type || this.$t('DeviceAllocationTypes.Device'));
+    },
     isCameraDeviceType(deviceType) {
       return CAMERA_DEVICE_TYPES.includes(deviceType);
     },
@@ -188,12 +192,16 @@ export default {
       const role = selectedRole.DeviceType;
       const expectedCandidateType = (role === 'MainCamera' || role === 'Guider' || role === 'PoleCamera') ? 'CCD' : role;
       if (device && device.DeviceType && expectedCandidateType && device.DeviceType !== expectedCandidateType) {
-        this.$bus.$emit('SendConsoleLogMsg', this.$t('DeviceAllocation_DeviceTypeMismatch', { role, expected: expectedCandidateType, selected: device.DeviceType }), 'warning');
+        this.$bus.$emit('SendConsoleLogMsg', this.$t('DeviceAllocation_DeviceTypeMismatch', {
+          role: this.deviceTypeLabel(role),
+          expected: this.deviceTypeLabel(expectedCandidateType),
+          selected: this.deviceTypeLabel(device.DeviceType),
+        }), 'warning');
         return;
       }
       const occupant = this.getDeviceOccupant(device);
       if (occupant && occupant !== role && !this.canSwapBetweenRoles(role, occupant)) {
-        this.$bus.$emit('SendConsoleLogMsg', this.$t('DeviceAllocation_SelectedDeviceAlreadyBoundNoSwap', { role: occupant }), 'warning');
+        this.$bus.$emit('SendConsoleLogMsg', this.$t('DeviceAllocation_SelectedDeviceAlreadyBoundNoSwap', { role: this.deviceTypeLabel(occupant) }), 'warning');
         return;
       }
       this.selectedCandidateKey = this.getDeviceKey(device);
@@ -201,7 +209,7 @@ export default {
       if (selectedRoleIndex < 0) return;
       const selectedRoleObj = this.DeviceTypes[selectedRoleIndex];
       if (selectedRoleObj.isBind && selectedRoleObj.selectedDeviceIndex === device.DeviceIndex) {
-        this.$bus.$emit('SendConsoleLogMsg', this.$t('DeviceAllocation_RoleAlreadyBoundToThisDevice', { role }), 'info');
+        this.$bus.$emit('SendConsoleLogMsg', this.$t('DeviceAllocation_RoleAlreadyBoundToThisDevice', { role: this.deviceTypeLabel(role) }), 'info');
         return;
       }
       // 旧分配逻辑：点击候选设备直接绑定。
@@ -360,7 +368,7 @@ export default {
       const selectedDevice = this.findDeviceByIndexAndType(selectedIndex, this.roleCandidateType(type));
       const occupant = this.getDeviceOccupant(selectedDevice);
       if (occupant && occupant !== type && !this.canSwapBetweenRoles(type, occupant)) {
-        this.$bus.$emit('SendConsoleLogMsg', this.$t('DeviceAllocation_SelectedDeviceAlreadyBoundNoSwap', { role: occupant }), 'warning');
+        this.$bus.$emit('SendConsoleLogMsg', this.$t('DeviceAllocation_SelectedDeviceAlreadyBoundNoSwap', { role: this.deviceTypeLabel(occupant) }), 'warning');
         return;
       }
       this.$bus.$emit('AppSendMessage', 'Vue_Command', 'BindingDevice:' + type + ':' + selectedIndex);

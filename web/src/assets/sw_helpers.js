@@ -108,6 +108,21 @@ DDDate.prototype.setMJD = function (mjd) {
 
 const generatedSkyObjects = new Map()
 
+async function installSkyFont (engine, fontPath, weight, fallbackWeight) {
+  const style = weight.toLowerCase()
+  try {
+    await engine.setFont(style, fontPath + 'Roboto-' + weight + '.ttf')
+  } catch (error) {
+    // The engine adds its built-in Latin fallback when the Chinese font loads.
+    console.warn('Failed to load Roboto for the sky map', error)
+  }
+  try {
+    await engine.setFont(style, fontPath + 'QUARCSSkySC-' + weight + '.otf')
+  } catch {
+    await engine.setFont(style, fontPath + 'QUARCSSkySC-' + fallbackWeight + '.otf')
+  }
+}
+
 const swh = {
   initStelWebEngine: function (store, wasmFile, canvasElem, getLocale, callBackOnDone) {
     let chineseFontsReady = false
@@ -121,10 +136,8 @@ const swh = {
         generatedSkyObjects.clear()
         const fontPath = process.env.BASE_URL + 'fonts/'
         Promise.all([
-          lstel.setFont('regular', fontPath + 'Roboto-Regular.ttf')
-            .then(() => lstel.setFont('regular', fontPath + 'QUARCSSkySC-Regular.otf')),
-          lstel.setFont('bold', fontPath + 'Roboto-Bold.ttf')
-            .then(() => lstel.setFont('bold', fontPath + 'QUARCSSkySC-Bold.otf'))
+          installSkyFont(lstel, fontPath, 'Regular', 'Bold'),
+          installSkyFont(lstel, fontPath, 'Bold', 'Regular')
         ]).then(() => {
           chineseFontsReady = true
         }).catch(error => console.error('Failed to load sky map fonts', error))
