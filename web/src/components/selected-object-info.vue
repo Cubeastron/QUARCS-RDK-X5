@@ -72,7 +72,13 @@
         </v-card-text>
       </v-card>
     </v-dialog>
-    <div data-testid="ui-selected-object-info-action-buttons" style="position: absolute; right: 0px; bottom: 6px;">
+    <div
+      data-testid="ui-selected-object-info-action-buttons"
+      style="position: absolute; right: 0px; bottom: 6px;"
+      @pointerup="finishZoom"
+      @pointercancel="finishZoom"
+      @lostpointercapture="finishZoom"
+    >
       <v-btn
         v-if="showPointToButton"
         fab
@@ -114,7 +120,9 @@
         fab small color="transparent"
         class="sky-zoom-button"
         :aria-label="$t('Zoom out')"
-        @click.stop="zoomByStep(1)"
+        @pointerdown.native.stop="startZoom($event, 1)"
+        @click.stop="zoomFromKeyboard($event, 1)"
+        @contextmenu.native.prevent
         data-testid="ui-selected-object-info-btn-zoom-out"
       >
         <img src="@/assets/images/svg/ui/remove_circle_outline.svg" alt="" height="40px"/>
@@ -124,7 +132,9 @@
         fab small color="transparent"
         class="sky-zoom-button"
         :aria-label="$t('Zoom in')"
-        @click.stop="zoomByStep(-1)"
+        @pointerdown.native.stop="startZoom($event, -1)"
+        @click.stop="zoomFromKeyboard($event, -1)"
+        @contextmenu.native.prevent
         data-testid="ui-selected-object-info-btn-zoom-in"
       >
         <img src="@/assets/images/svg/ui/add_circle_outline.svg" alt="" height="40px"/>
@@ -144,6 +154,8 @@ import swh from '@/assets/sw_helpers.js'
 import { localizedSkySourceName, localizedSkySourceType } from '@/assets/sky-localization'
 
 const SKY_ZOOM_STEP = 1.25
+const SKY_ZOOM_HOLD_DELAY = 280
+const SKY_ZOOM_RATE = Math.log(SKY_ZOOM_STEP) / 250
 
 export default {
   data: function () {
@@ -236,10 +248,14 @@ export default {
     }
   },
   watch: {
+    showPointToButton: function (visible) {
+      if (visible) this.stopZoom()
+    },
     selectedObject: function (s) {
       this.showMinorNames = false
       this.wikipediaData = undefined
       if (!s) {
+        this.stopZoom()
         if (this.timer) clearInterval(this.timer)
         this.timer = undefined
         return
@@ -438,8 +454,47 @@ export default {
     MountGoto: function () {
       this.$bus.$emit('MountGoto');
     },
-    zoomByStep: function (step) {
-      this.$stel.zoomTo(this.$stel.core.fov * Math.pow(SKY_ZOOM_STEP, step), 0)
+    zoomByStep: function (direction) {
+      this.$stel.zoomTo(this.$stel.core.fov * Math.pow(SKY_ZOOM_STEP, direction), 0.22)
+    },
+    zoomFromKeyboard: function (event, direction) {
+      if (event.detail === 0 && !this.zoomPress) this.zoomByStep(direction)
+    },
+    startZoom: function (event, direction) {
+      if (this.zoomPress || !event.isPrimary || event.button !== 0) return
+      const button = event.currentTarget
+      const press = { button, pointerId: event.pointerId, direction, held: false, frame: null }
+      button.setPointerCapture(press.pointerId)
+      this.zoomPress = press
+      let lastFrame = performance.now() + SKY_ZOOM_HOLD_DELAY
+      const advance = (now) => {
+        if (now > lastFrame) {
+          press.held = true
+          const elapsed = Math.min(now - lastFrame, 50)
+          const factor = Math.exp(direction * SKY_ZOOM_RATE * elapsed)
+          this.$stel.zoomTo(this.$stel.core.fov * factor, 0)
+          lastFrame = now
+        }
+        press.frame = requestAnimationFrame(advance)
+      }
+      press.frame = requestAnimationFrame(advance)
+    },
+    finishZoom: function (event) {
+      const press = this.zoomPress
+      if (!press || event.pointerId !== press.pointerId) return
+      this.stopZoom()
+      if (event.type !== 'pointerup' || press.held) return
+      const { left, right, top, bottom } = press.button.getBoundingClientRect()
+      if (event.clientX >= left && event.clientX <= right && event.clientY >= top && event.clientY <= bottom) {
+        this.zoomByStep(press.direction)
+      }
+    },
+    stopZoom: function () {
+      const press = this.zoomPress
+      if (!press) return
+      this.zoomPress = null
+      cancelAnimationFrame(press.frame)
+      if (press.button.hasPointerCapture(press.pointerId)) press.button.releasePointerCapture(press.pointerId)
     },
     extraButtonClicked: function (btn) {
       btn.callback()
@@ -460,6 +515,8 @@ export default {
     }
   },
   mounted: function () {
+    window.addEventListener('blur', this.stopZoom)
+    document.addEventListener('visibilitychange', this.stopZoom)
     if (this.$bus && this.$bus.$on) {
       this.$bus.$on('UseCurrentSkySelectionForSchedule', this.onUseCurrentSkySelectionForSchedule);
       this.$bus.$on('ScheduleTargetPickStart', () => {
@@ -471,6 +528,9 @@ export default {
     }
   },
   beforeDestroy() {
+    this.stopZoom()
+    window.removeEventListener('blur', this.stopZoom)
+    document.removeEventListener('visibilitychange', this.stopZoom)
     if (this.$bus && this.$bus.$off) {
       this.$bus.$off('UseCurrentSkySelectionForSchedule', this.onUseCurrentSkySelectionForSchedule);
       this.$bus.$off('ScheduleTargetPickStart');
@@ -482,7 +542,7 @@ export default {
 
 <style>
 .sky-zoom-button {
-  touch-action: manipulation;
+  touch-action: none;
 }
 
 .sky-zoom-button img {
