@@ -109,11 +109,25 @@
         ></img>
       </v-btn>
 
-      <v-btn v-if="!showPointToButton" fab small color="transparent" @click="zoomOutButtonClicked()" @touchstart.stop.prevent="zoomOutButtonClicked()">
-        <img :class="{bt_disabled: !zoomOutButtonEnabled}" src="@/assets/images/svg/ui/remove_circle_outline.svg" height="40px" style="min-height: 40px"></img>
+      <v-btn
+        v-if="!showPointToButton"
+        fab small color="transparent"
+        class="sky-zoom-button"
+        :aria-label="$t('Zoom out')"
+        @click.stop="zoomByStep(1)"
+        data-testid="ui-selected-object-info-btn-zoom-out"
+      >
+        <img src="@/assets/images/svg/ui/remove_circle_outline.svg" alt="" height="40px"/>
       </v-btn>
-      <v-btn v-if="!showPointToButton" fab small color="transparent" @click="zoomInButtonClicked()" @touchstart.stop.prevent="zoomInButtonClicked()">
-        <img :class="{bt_disabled: !zoomInButtonEnabled}" src="@/assets/images/svg/ui/add_circle_outline.svg" height="40px" style="min-height: 40px"></img>
+      <v-btn
+        v-if="!showPointToButton"
+        fab small color="transparent"
+        class="sky-zoom-button"
+        :aria-label="$t('Zoom in')"
+        @click.stop="zoomByStep(-1)"
+        data-testid="ui-selected-object-info-btn-zoom-in"
+      >
+        <img src="@/assets/images/svg/ui/add_circle_outline.svg" alt="" height="40px"/>
       </v-btn>
 
     </div>
@@ -128,6 +142,8 @@
 import Moment from 'moment'
 import swh from '@/assets/sw_helpers.js'
 import { localizedSkySourceName, localizedSkySourceType } from '@/assets/sky-localization'
+
+const SKY_ZOOM_STEP = 1.25
 
 export default {
   data: function () {
@@ -204,14 +220,6 @@ export default {
       if (!this.$store.state.stel.lock) return true
       if (this.$store.state.stel.lock !== this.$store.state.stel.selection) return true
       return false
-    },
-    zoomInButtonEnabled: function () {
-      if (!this.$store.state.stel.lock || !this.selectedObject) return false
-      return true
-    },
-    zoomOutButtonEnabled: function () {
-      if (!this.$store.state.stel.lock || !this.selectedObject) return false
-      return true
     },
     extraButtons: function () {
       return swh.selectedObjectExtraButtons
@@ -430,23 +438,8 @@ export default {
     MountGoto: function () {
       this.$bus.$emit('MountGoto');
     },
-    zoomInButtonClicked: function () {
-      const currentFov = this.$store.state.stel.fov * 180 / Math.PI
-      this.$stel.zoomTo(currentFov * 0.3 * Math.PI / 180, 0.4)
-      const that = this
-      this.zoomTimeout = setTimeout(_ => { that.zoomInButtonClicked() }, 300)
-    },
-    zoomOutButtonClicked: function () {
-      const currentFov = this.$store.state.stel.fov * 180 / Math.PI
-      this.$stel.zoomTo(currentFov * 3 * Math.PI / 180, 0.6)
-      const that = this
-      this.zoomTimeout = setTimeout(_ => { that.zoomOutButtonClicked() }, 200)
-    },
-    stopZoom: function () {
-      if (this.zoomTimeout) {
-        clearTimeout(this.zoomTimeout)
-        this.zoomTimeout = undefined
-      }
+    zoomByStep: function (step) {
+      this.$stel.zoomTo(this.$stel.core.fov * Math.pow(SKY_ZOOM_STEP, step), 0)
     },
     extraButtonClicked: function (btn) {
       btn.callback()
@@ -467,10 +460,6 @@ export default {
     }
   },
   mounted: function () {
-    const that = this
-    window.addEventListener('mouseup', function (event) {
-      that.stopZoom()
-    })
     if (this.$bus && this.$bus.$on) {
       this.$bus.$on('UseCurrentSkySelectionForSchedule', this.onUseCurrentSkySelectionForSchedule);
       this.$bus.$on('ScheduleTargetPickStart', () => {
@@ -492,8 +481,13 @@ export default {
 </script>
 
 <style>
-.bt_disabled {
-  filter: opacity(0.2);
+.sky-zoom-button {
+  touch-action: manipulation;
+}
+
+.sky-zoom-button img {
+  min-height: 40px;
+  pointer-events: none;
 }
 
 .radecVal {
