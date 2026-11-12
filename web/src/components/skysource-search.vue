@@ -26,6 +26,7 @@
 
 <script>
 import swh from '@/assets/sw_helpers.js'
+import { localizedSkySourceName, localizedSkySourceType } from '@/assets/sky-localization'
 import vClickOutside from 'v-click-outside'
 import _ from 'lodash'
 
@@ -35,7 +36,6 @@ export default {
       autoCompleteChoices: [],
       searchText: '',
       lastQuery: undefined,
-      FirstItem: null,
     }
   },
   props: ['value', 'floatingList'],
@@ -64,26 +64,15 @@ export default {
   },
   methods: {
     SelectedObjectByName(text) {
-      var that = this
-      let str = text
-      str = str.toUpperCase()
-      str = str.replace(/\s+/g, '')
-      // console.log('Input search query: ' + str)
-      swh.querySkySources(str, 10).then(results => {
-        that.autoCompleteChoices = results
-        // for (let i = 0; i < that.autoCompleteChoices.length; i++) {
-        //   console.log('List[', i, ']:', this.nameForSkySource(that.autoCompleteChoices[i]))
-        // }
-        const firstChoice = that.autoCompleteChoices[0]
-        this.FirstItem = firstChoice
-        this.getFirstItemRaDec()
-        this.sourceClicked(firstChoice) // 触发点击第一个元素的方法
+      swh.querySkySources(text, 10).then(results => {
+        const [source] = results
+        if (!source) return
+        const { ra, de } = source.model_data || {}
+        if (Number.isFinite(ra) && Number.isFinite(de)) {
+          this.$bus.$emit('TargetRaDec', this.radecForSkySource(source))
+        }
+        this.sourceClicked(source)
       }, err => { console.log(err) })
-    },
-    getFirstItemRaDec() {
-      console.log('FirstItem[', this.radecForSkySource(this.FirstItem), ']')
-      this.$bus.$emit('TargetRaDec',this.radecForSkySource(this.FirstItem))
-      this.FirstItem = null
     },
     sourceClicked: function (val) {
       this.$emit('input', val)
@@ -117,6 +106,12 @@ export default {
     nameForSkySource: function (s) {
       const cn = swh.cleanupOneSkySourceName(s.match)
       const n = swh.nameForSkySource(s)
+      const localized = localizedSkySourceName(s, this.$i18n.locale)
+      if (localized) {
+        const identifier = s.names.find(name => /^(M|NGC|IC)\s+\d/.test(name))
+        return localized + ' (' + (identifier || n) + ')'
+      }
+      if (this.$i18n.locale !== 'cn' && /[\u3400-\u9fff]/.test(cn)) return n
       if (cn === n) {
         return n
       } else {
@@ -128,7 +123,7 @@ export default {
       return 'Ra:' + ra + ',' + 'Dec:' + dec
     },
     typeToName: function (t) {
-      return swh.nameForSkySourceType(t)
+      return localizedSkySourceType(t, this.$i18n.locale) || swh.nameForSkySourceType(t)
     },
     iconForSkySource: function (s) {
       return swh.iconForSkySource(s)

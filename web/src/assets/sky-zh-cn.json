@@ -1,0 +1,832 @@
+{
+  "directions": {
+    "N": "北",
+    "E": "东",
+    "S": "南",
+    "W": "西",
+    "NE": "东北",
+    "SE": "东南",
+    "SW": "西南",
+    "NW": "西北"
+  },
+  "constellations": {
+    "And": {
+      "name": "Andromeda",
+      "zh": "仙女座"
+    },
+    "Ant": {
+      "name": "Antlia",
+      "zh": "唧筒座"
+    },
+    "Aps": {
+      "name": "Apus",
+      "zh": "天燕座"
+    },
+    "Aqr": {
+      "name": "Aquarius",
+      "zh": "宝瓶座"
+    },
+    "Aql": {
+      "name": "Aquila",
+      "zh": "天鹰座"
+    },
+    "Ara": {
+      "name": "Ara",
+      "zh": "天坛座"
+    },
+    "Ari": {
+      "name": "Aries",
+      "zh": "白羊座"
+    },
+    "Aur": {
+      "name": "Auriga",
+      "zh": "御夫座"
+    },
+    "Boo": {
+      "name": "Bootes",
+      "zh": "牧夫座"
+    },
+    "Cae": {
+      "name": "Caelum",
+      "zh": "雕具座"
+    },
+    "Cam": {
+      "name": "Camelopardalis",
+      "zh": "鹿豹座"
+    },
+    "Cnc": {
+      "name": "Cancer",
+      "zh": "巨蟹座"
+    },
+    "CVn": {
+      "name": "Canes Venatici",
+      "zh": "猎犬座"
+    },
+    "CMa": {
+      "name": "Canis Major",
+      "zh": "大犬座"
+    },
+    "CMi": {
+      "name": "Canis Minor",
+      "zh": "小犬座"
+    },
+    "Cap": {
+      "name": "Capricornus",
+      "zh": "摩羯座"
+    },
+    "Car": {
+      "name": "Carina",
+      "zh": "船底座"
+    },
+    "Cas": {
+      "name": "Cassiopeia",
+      "zh": "仙后座"
+    },
+    "Cen": {
+      "name": "Centaurus",
+      "zh": "半人马座"
+    },
+    "Cep": {
+      "name": "Cepheus",
+      "zh": "仙王座"
+    },
+    "Cet": {
+      "name": "Cetus",
+      "zh": "鲸鱼座"
+    },
+    "Cha": {
+      "name": "Chamaeleon",
+      "zh": "蝘蜓座"
+    },
+    "Cir": {
+      "name": "Circinus",
+      "zh": "圆规座"
+    },
+    "Col": {
+      "name": "Columba",
+      "zh": "天鸽座"
+    },
+    "Com": {
+      "name": "Coma Berenices",
+      "zh": "后发座"
+    },
+    "CrA": {
+      "name": "Corona Australis",
+      "zh": "南冕座"
+    },
+    "CrB": {
+      "name": "Corona Borealis",
+      "zh": "北冕座"
+    },
+    "Crv": {
+      "name": "Corvus",
+      "zh": "乌鸦座"
+    },
+    "Crt": {
+      "name": "Crater",
+      "zh": "巨爵座"
+    },
+    "Cru": {
+      "name": "Crux",
+      "zh": "南十字座"
+    },
+    "Cyg": {
+      "name": "Cygnus",
+      "zh": "天鹅座"
+    },
+    "Del": {
+      "name": "Delphinus",
+      "zh": "海豚座"
+    },
+    "Dor": {
+      "name": "Dorado",
+      "zh": "剑鱼座"
+    },
+    "Dra": {
+      "name": "Draco",
+      "zh": "天龙座"
+    },
+    "Equ": {
+      "name": "Equuleus",
+      "zh": "小马座"
+    },
+    "Eri": {
+      "name": "Eridanus",
+      "zh": "波江座"
+    },
+    "For": {
+      "name": "Fornax",
+      "zh": "天炉座"
+    },
+    "Gem": {
+      "name": "Gemini",
+      "zh": "双子座"
+    },
+    "Gru": {
+      "name": "Grus",
+      "zh": "天鹤座"
+    },
+    "Her": {
+      "name": "Hercules",
+      "zh": "武仙座"
+    },
+    "Hor": {
+      "name": "Horologium",
+      "zh": "时钟座"
+    },
+    "Hya": {
+      "name": "Hydra",
+      "zh": "长蛇座"
+    },
+    "Hyi": {
+      "name": "Hydrus",
+      "zh": "水蛇座"
+    },
+    "Ind": {
+      "name": "Indus",
+      "zh": "印第安座"
+    },
+    "Lac": {
+      "name": "Lacerta",
+      "zh": "蝎虎座"
+    },
+    "Leo": {
+      "name": "Leo",
+      "zh": "狮子座"
+    },
+    "LMi": {
+      "name": "Leo Minor",
+      "zh": "小狮座"
+    },
+    "Lep": {
+      "name": "Lepus",
+      "zh": "天兔座"
+    },
+    "Lib": {
+      "name": "Libra",
+      "zh": "天秤座"
+    },
+    "Lup": {
+      "name": "Lupus",
+      "zh": "豺狼座"
+    },
+    "Lyn": {
+      "name": "Lynx",
+      "zh": "天猫座"
+    },
+    "Lyr": {
+      "name": "Lyra",
+      "zh": "天琴座"
+    },
+    "Men": {
+      "name": "Mensa",
+      "zh": "山案座"
+    },
+    "Mic": {
+      "name": "Microscopium",
+      "zh": "显微镜座"
+    },
+    "Mon": {
+      "name": "Monoceros",
+      "zh": "麒麟座"
+    },
+    "Mus": {
+      "name": "Musca",
+      "zh": "苍蝇座"
+    },
+    "Nor": {
+      "name": "Norma",
+      "zh": "矩尺座"
+    },
+    "Oct": {
+      "name": "Octans",
+      "zh": "南极座"
+    },
+    "Oph": {
+      "name": "Ophiuchus",
+      "zh": "蛇夫座"
+    },
+    "Ori": {
+      "name": "Orion",
+      "zh": "猎户座"
+    },
+    "Pav": {
+      "name": "Pavo",
+      "zh": "孔雀座"
+    },
+    "Peg": {
+      "name": "Pegasus",
+      "zh": "飞马座"
+    },
+    "Per": {
+      "name": "Perseus",
+      "zh": "英仙座"
+    },
+    "Phe": {
+      "name": "Phoenix",
+      "zh": "凤凰座"
+    },
+    "Pic": {
+      "name": "Pictor",
+      "zh": "绘架座"
+    },
+    "Psc": {
+      "name": "Pisces",
+      "zh": "双鱼座"
+    },
+    "PsA": {
+      "name": "Piscis Austrinus",
+      "zh": "南鱼座"
+    },
+    "Pup": {
+      "name": "Puppis",
+      "zh": "船尾座"
+    },
+    "Pyx": {
+      "name": "Pyxis",
+      "zh": "罗盘座"
+    },
+    "Ret": {
+      "name": "Reticulum",
+      "zh": "网罟座"
+    },
+    "Sge": {
+      "name": "Sagitta",
+      "zh": "天箭座"
+    },
+    "Sgr": {
+      "name": "Sagittarius",
+      "zh": "人马座"
+    },
+    "Sco": {
+      "name": "Scorpius",
+      "zh": "天蝎座"
+    },
+    "Scl": {
+      "name": "Sculptor",
+      "zh": "玉夫座"
+    },
+    "Sct": {
+      "name": "Scutum",
+      "zh": "盾牌座"
+    },
+    "Ser": {
+      "name": "Serpens",
+      "zh": "巨蛇座"
+    },
+    "Sex": {
+      "name": "Sextans",
+      "zh": "六分仪座"
+    },
+    "Tau": {
+      "name": "Taurus",
+      "zh": "金牛座"
+    },
+    "Tel": {
+      "name": "Telescopium",
+      "zh": "望远镜座"
+    },
+    "Tri": {
+      "name": "Triangulum",
+      "zh": "三角座"
+    },
+    "TrA": {
+      "name": "Triangulum Australe",
+      "zh": "南三角座"
+    },
+    "Tuc": {
+      "name": "Tucana",
+      "zh": "杜鹃座"
+    },
+    "UMa": {
+      "name": "Ursa Major",
+      "zh": "大熊座"
+    },
+    "UMi": {
+      "name": "Ursa Minor",
+      "zh": "小熊座"
+    },
+    "Vel": {
+      "name": "Vela",
+      "zh": "船帆座"
+    },
+    "Vir": {
+      "name": "Virgo",
+      "zh": "室女座"
+    },
+    "Vol": {
+      "name": "Volans",
+      "zh": "飞鱼座"
+    },
+    "Vul": {
+      "name": "Vulpecula",
+      "zh": "狐狸座"
+    }
+  },
+  "objects": [
+    {
+      "zh": "太阳",
+      "names": [
+        "Sun"
+      ],
+      "aliases": [
+        "日"
+      ]
+    },
+    {
+      "zh": "月球",
+      "names": [
+        "Moon"
+      ],
+      "aliases": [
+        "月亮"
+      ]
+    },
+    {
+      "zh": "水星",
+      "names": [
+        "Mercury"
+      ]
+    },
+    {
+      "zh": "金星",
+      "names": [
+        "Venus"
+      ],
+      "aliases": [
+        "启明星",
+        "长庚星"
+      ]
+    },
+    {
+      "zh": "地球",
+      "names": [
+        "Earth"
+      ]
+    },
+    {
+      "zh": "火星",
+      "names": [
+        "Mars"
+      ]
+    },
+    {
+      "zh": "木星",
+      "names": [
+        "Jupiter"
+      ]
+    },
+    {
+      "zh": "土星",
+      "names": [
+        "Saturn"
+      ]
+    },
+    {
+      "zh": "天王星",
+      "names": [
+        "Uranus"
+      ]
+    },
+    {
+      "zh": "海王星",
+      "names": [
+        "Neptune"
+      ]
+    },
+    {
+      "zh": "冥王星",
+      "names": [
+        "Pluto"
+      ]
+    },
+    {
+      "zh": "织女星",
+      "names": [
+        "Vega",
+        "HIP 91262"
+      ],
+      "aliases": [
+        "织女一"
+      ]
+    },
+    {
+      "zh": "天狼星",
+      "names": [
+        "Sirius",
+        "HIP 32349"
+      ]
+    },
+    {
+      "zh": "北极星",
+      "names": [
+        "Polaris",
+        "HIP 11767"
+      ],
+      "aliases": [
+        "勾陈一"
+      ]
+    },
+    {
+      "zh": "五车二",
+      "names": [
+        "Capella",
+        "HIP 24608"
+      ]
+    },
+    {
+      "zh": "牛郎星",
+      "names": [
+        "Altair",
+        "HIP 97649"
+      ],
+      "aliases": [
+        "河鼓二",
+        "牵牛星"
+      ]
+    },
+    {
+      "zh": "天津四",
+      "names": [
+        "Deneb",
+        "HIP 102098"
+      ]
+    },
+    {
+      "zh": "参宿四",
+      "names": [
+        "Betelgeuse",
+        "HIP 27989"
+      ]
+    },
+    {
+      "zh": "参宿七",
+      "names": [
+        "Rigel",
+        "HIP 24436"
+      ]
+    },
+    {
+      "zh": "参宿五",
+      "names": [
+        "Bellatrix",
+        "HIP 25336"
+      ]
+    },
+    {
+      "zh": "大角星",
+      "names": [
+        "Arcturus",
+        "HIP 69673"
+      ]
+    },
+    {
+      "zh": "心宿二",
+      "names": [
+        "Antares",
+        "HIP 80763"
+      ]
+    },
+    {
+      "zh": "角宿一",
+      "names": [
+        "Spica",
+        "HIP 65474"
+      ]
+    },
+    {
+      "zh": "毕宿五",
+      "names": [
+        "Aldebaran",
+        "HIP 21421"
+      ]
+    },
+    {
+      "zh": "老人星",
+      "names": [
+        "Canopus",
+        "HIP 30438"
+      ]
+    },
+    {
+      "zh": "南河三",
+      "names": [
+        "Procyon",
+        "HIP 37279"
+      ]
+    },
+    {
+      "zh": "轩辕十四",
+      "names": [
+        "Regulus",
+        "HIP 49669"
+      ]
+    },
+    {
+      "zh": "北落师门",
+      "names": [
+        "Fomalhaut",
+        "HIP 113368"
+      ]
+    },
+    {
+      "zh": "北河二",
+      "names": [
+        "Castor",
+        "HIP 36850"
+      ]
+    },
+    {
+      "zh": "北河三",
+      "names": [
+        "Pollux",
+        "HIP 37826"
+      ]
+    },
+    {
+      "zh": "南门二",
+      "names": [
+        "Rigil Kentaurus",
+        "Rigel Kentaurus",
+        "Alpha Centauri",
+        "HIP 71683"
+      ]
+    },
+    {
+      "zh": "比邻星",
+      "names": [
+        "Proxima Centauri",
+        "HIP 70890"
+      ]
+    },
+    {
+      "zh": "天枢",
+      "names": [
+        "Dubhe",
+        "HIP 54061"
+      ]
+    },
+    {
+      "zh": "天璇",
+      "names": [
+        "Merak",
+        "HIP 53910"
+      ]
+    },
+    {
+      "zh": "天玑",
+      "names": [
+        "Phecda",
+        "HIP 58001"
+      ]
+    },
+    {
+      "zh": "天权",
+      "names": [
+        "Megrez",
+        "HIP 59774",
+        "* del UMa"
+      ]
+    },
+    {
+      "zh": "玉衡",
+      "names": [
+        "Alioth",
+        "HIP 62956"
+      ]
+    },
+    {
+      "zh": "开阳",
+      "names": [
+        "Mizar",
+        "HIP 65378"
+      ]
+    },
+    {
+      "zh": "摇光",
+      "names": [
+        "Alkaid",
+        "HIP 67301"
+      ]
+    },
+    {
+      "zh": "仙女座星系",
+      "names": [
+        "M 31",
+        "NGC 224",
+        "Andromeda Nebula",
+        "Andromeda Galaxy",
+        "Great Nebula in Andromeda"
+      ],
+      "aliases": [
+        "仙女座大星系"
+      ]
+    },
+    {
+      "zh": "昴星团",
+      "names": [
+        "M 45",
+        "Pleiades",
+        "Seven Sisters",
+        "Subaru"
+      ],
+      "aliases": [
+        "七姐妹星团",
+        "昴宿星团"
+      ]
+    },
+    {
+      "zh": "猎户座大星云",
+      "names": [
+        "M 42",
+        "NGC 1976",
+        "Orion Nebula",
+        "Great Orion Nebula",
+        "Great Nebula in Orion"
+      ],
+      "aliases": [
+        "猎户座星云"
+      ]
+    },
+    {
+      "zh": "北美洲星云",
+      "names": [
+        "NGC 7000",
+        "North America Nebula"
+      ],
+      "aliases": [
+        "北美星云"
+      ]
+    },
+    {
+      "zh": "三角座星系",
+      "names": [
+        "M 33",
+        "NGC 598",
+        "Triangulum Galaxy"
+      ],
+      "aliases": [
+        "三角座螺旋星系"
+      ]
+    },
+    {
+      "zh": "涡状星系",
+      "names": [
+        "M 51",
+        "NGC 5194",
+        "Whirlpool Galaxy"
+      ],
+      "aliases": [
+        "漩涡星系"
+      ]
+    },
+    {
+      "zh": "帽子星系",
+      "names": [
+        "M 104",
+        "NGC 4594",
+        "Sombrero Galaxy"
+      ],
+      "aliases": [
+        "草帽星系"
+      ]
+    },
+    {
+      "zh": "蟹状星云",
+      "names": [
+        "M 1",
+        "NGC 1952",
+        "Crab Nebula"
+      ]
+    },
+    {
+      "zh": "环状星云",
+      "names": [
+        "M 57",
+        "NGC 6720",
+        "Ring Nebula"
+      ]
+    },
+    {
+      "zh": "哑铃星云",
+      "names": [
+        "M 27",
+        "NGC 6853",
+        "Dumbbell Nebula"
+      ]
+    },
+    {
+      "zh": "礁湖星云",
+      "names": [
+        "M 8",
+        "NGC 6523",
+        "Lagoon Nebula"
+      ]
+    },
+    {
+      "zh": "三裂星云",
+      "names": [
+        "M 20",
+        "NGC 6514",
+        "Trifid Nebula"
+      ],
+      "aliases": [
+        "三叶星云"
+      ]
+    },
+    {
+      "zh": "鹰状星云",
+      "names": [
+        "M 16",
+        "NGC 6611",
+        "Eagle Nebula"
+      ]
+    },
+    {
+      "zh": "玫瑰星云",
+      "names": [
+        "NGC 2237",
+        "Rosette Nebula"
+      ]
+    },
+    {
+      "zh": "马头星云",
+      "names": [
+        "Barnard 33",
+        "B 33",
+        "Horsehead Nebula"
+      ]
+    },
+    {
+      "zh": "双星团",
+      "names": [
+        "NGC 884",
+        "Double Cluster"
+      ],
+      "aliases": [
+        "英仙座双星团"
+      ]
+    },
+    {
+      "zh": "武仙座球状星团",
+      "names": [
+        "M 13",
+        "NGC 6205",
+        "Great Hercules Cluster",
+        "Hercules Globular Cluster"
+      ]
+    },
+    {
+      "zh": "蜂巢星团",
+      "names": [
+        "M 44",
+        "NGC 2632",
+        "Beehive Cluster",
+        "Praesepe"
+      ],
+      "aliases": [
+        "鬼星团"
+      ]
+    }
+  ]
+}

@@ -689,7 +689,7 @@
           >
               <v-list-item-icon style="margin-right: 10px;">
                 <div style="display: flex; justify-content: center; align-items: center;">
-                <img :src="require(`@/assets/images/svg/ui/${device.driverType}.svg`)" height="36px"
+                <img :src="require(`@/assets/images/svg/ui/${device.driverType === 'Mount' ? 'mount-device' : device.driverType}.svg`)" height="36px"
                   style="min-height: 36px"></img>
                 </div>
               </v-list-item-icon>
@@ -8550,11 +8550,12 @@ export default {
           }
           let obj = swh.skySource2SweObj(ss)
           if (!obj) {
-            obj = this.$stel.createObj(ss.model, ss)
-            this.$selectionLayer.add(obj)
+            obj = swh.createSkySourceObject(ss)
+            if (obj) this.$selectionLayer.add(obj)
           }
           if (!obj) {
-            console.warning("Can't find object in SWE: " + ss.names[0])
+            console.warn("Can't find object in SWE: " + ss.names[0])
+            return
           }
           swh.setSweObjAsSelection(obj)
         }, err => {
@@ -11802,14 +11803,12 @@ export default {
         // in the $store.stel object in a reactive way (useful for vue components).
         // To modify the state of the StelWebEngine, it's enough to call/set values directly on the $stel object
         try {
-          swh.initStelWebEngine(that.$store, f.default, that.$refs.stelCanvas, function () {
+          swh.initStelWebEngine(that.$store, f.default, that.$refs.stelCanvas, () => that.$i18n.locale, function () {
             // Start auto location detection (even if we don't use it)
             swh.getGeolocation().then(p => swh.geoCodePosition(p, that)).then((loc) => {
               that.$store.commit('setAutoDetectedLocation', loc)
             }, (error) => { console.log(error) })
 
-            that.$stel.setFont('regular', process.env.BASE_URL + 'fonts/Roboto-Regular.ttf', 1.38)
-            that.$stel.setFont('bold', process.env.BASE_URL + 'fonts/Roboto-Bold.ttf', 1.38)
             that.$stel.core.constellations.show_only_pointed = false
 
             that.setStateFromQueryArgs()

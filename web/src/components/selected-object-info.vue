@@ -127,6 +127,7 @@
 
 import Moment from 'moment'
 import swh from '@/assets/sw_helpers.js'
+import { localizedSkySourceName, localizedSkySourceType } from '@/assets/sky-localization'
 
 export default {
   data: function () {
@@ -152,10 +153,17 @@ export default {
       return this.$store.state.stel && this.$store.state.stel.selection ? this.$store.state.stel.selection : undefined
     },
     title: function () {
-      return this.selectedObject ? this.otherNames[0] : 'Selection'
+      return this.otherNames[0] || this.$t('Selection')
+    },
+    canonicalTitle: function () {
+      const name = this.selectedObject?.names?.[0]
+      return name ? swh.cleanupOneSkySourceName(name, 10) : ''
     },
     otherNames: function () {
-      return this.selectedObject ? swh.namesForSkySource(this.selectedObject, 26) : undefined
+      if (!this.selectedObject) return []
+      const chinese = localizedSkySourceName(this.selectedObject, 'cn')
+      const names = swh.namesForSkySource(this.selectedObject, 10).filter(name => name !== chinese)
+      return chinese && this.$i18n.locale === 'cn' ? [chinese, ...names] : names
     },
     otherNames1to7: function () {
       return this.otherNames.slice(1, 8)
@@ -184,7 +192,8 @@ export default {
           morpho = morpho + ' '
         }
       }
-      return morpho + swh.nameForSkySourceType(this.selectedObject.types[0])
+      const type = this.selectedObject.types[0]
+      return morpho + (localizedSkySourceType(type, this.$i18n.locale) || swh.nameForSkySourceType(type))
     },
     icon: function () {
       return swh.iconForSkySource(this.selectedObject)
@@ -240,15 +249,14 @@ export default {
       }
     },
     stelSelectionId: function (s) {
+      this.$store.commit('setSelectedObject', 0)
       if (!this.$stel.core.selection) {
-        this.$store.commit('setSelectedObject', 0)
         return
       }
       swh.sweObj2SkySource(this.$stel.core.selection).then(res => {
-        this.$store.commit('setSelectedObject', res)
+        if (this.stelSelectionId === s) this.$store.commit('setSelectedObject', res)
       }, err => {
         console.log("Couldn't find info for object " + s + ':' + err)
-        this.$store.commit('setSelectedObject', 0)
       })
     },
     showShareLinkDialog: function (b) {
@@ -409,7 +417,7 @@ export default {
       this.printName();
     },
     printName: function () {
-      const Name = this.title;
+      const Name = this.canonicalTitle;
       console.log('SelectedObject:', Name);
       this.$bus.$emit('SendConsoleLogMsg', 'SelectedObject:' + Name, 'info');
       this.$bus.$emit('insertObjName',Name);

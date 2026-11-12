@@ -53,6 +53,25 @@ WebSocket 转发服务在 `hub/` 中执行 `npm ci --omit=dev`。服务运行目
 
 首次部署离线搜索时，从自有 QUARCS 镜像内的 `/home/quarcs/workspace/QUARCS/searchapi/` 取出 `dso.txt` 和 `stars_l.txt`，和 `search/server.py` 一起放到 `/opt/quarcs/search/`，然后启用 `quarcs-search.service`。搜索程序使用 Python 3.10 及以上的标准库。
 
+### 简体中文星图
+
+网页使用现有的语言选项，简体中文模式显示中文方位、星座和常见天体。将 `web/src/assets/sky-zh-cn.json` 与 `search/server.py` 一起安装到 `/opt/quarcs/search/`，然后重启搜索服务，启用中文别名。星表编号和已有英文查询继续可用。
+
+用下列命令为板上已有的西方星图生成可翻译的标签元数据。部署时备份原索引，再用生成的文件替换原索引。
+
+```sh
+python3 deploy/localize-western-sky.py \
+  /var/www/html/skydata/skycultures/western/index.json /tmp/quarcs-western-index.json
+```
+
+网页产物包含离线字体。更新名称表并加入新字符时，用 Python 3.10 及以上版本和 FontTools 从 Noto Sans CJK TTC 重新生成字体子集。
+
+```sh
+python3 web/tools/build_sky_font.py \
+  /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc \
+  /usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc
+```
+
 ## 上游源码
 
 | 组件 | 上游提交 |

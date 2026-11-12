@@ -29,11 +29,11 @@ export default {
       }
       let obj = swh.skySource2SweObj(ss)
       if (!obj) {
-        obj = this.$stel.createObj(ss.model, ss)
-        this.$selectionLayer.add(obj)
+        obj = swh.createSkySourceObject(ss)
+        if (obj) this.$selectionLayer.add(obj)
       }
       if (!obj) {
-        console.warning("Can't find object in SWE: " + ss.names[0])
+        console.warn("Can't find object in SWE: " + ss.names[0])
         return
       }
       swh.setSweObjAsSelection(obj)

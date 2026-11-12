@@ -10,6 +10,7 @@ import Vue from 'vue'
 import _ from 'lodash'
 import StelWebEngine from '@/assets/js/stellarium-web-engine.js'
 import Moment from 'moment'
+import { translateSkyLabel } from './sky-localization'
 
 //by QIU just only for testing
 const myData=
@@ -106,15 +107,24 @@ DDDate.prototype.setMJD = function (mjd) {
 }
 
 const swh = {
-  initStelWebEngine: function (store, wasmFile, canvasElem, callBackOnDone) {
+  initStelWebEngine: function (store, wasmFile, canvasElem, getLocale, callBackOnDone) {
+    let chineseFontsReady = false
     StelWebEngine({
       wasmFile: wasmFile,
       canvas: canvasElem,
       translateFn: function (domain, str) {
-        return str
-        // return i18next.t(str, {ns: domain});
+        return chineseFontsReady && getLocale() === 'cn' ? translateSkyLabel(domain, str) : str
       },
       onReady: function (lstel) {
+        const fontPath = process.env.BASE_URL + 'fonts/'
+        Promise.all([
+          lstel.setFont('regular', fontPath + 'Roboto-Regular.ttf')
+            .then(() => lstel.setFont('regular', fontPath + 'QUARCSSkySC-Regular.otf')),
+          lstel.setFont('bold', fontPath + 'Roboto-Bold.ttf')
+            .then(() => lstel.setFont('bold', fontPath + 'QUARCSSkySC-Bold.otf'))
+        ]).then(() => {
+          chineseFontsReady = true
+        }).catch(error => console.error('Failed to load sky map fonts', error))
         store.commit('replaceStelWebEngine', lstel.getTree())
         lstel.onValueChanged(function (path, value) {
           const tree = store.state.stel
@@ -355,29 +365,42 @@ const swh = {
       const id = 'CON western ' + ss.model_data.iau_abbreviation
       obj = $stel.getObj(id)
     }
-    if (!obj) {
-      obj = $stel.getObj(ss.names[0])
+    if (obj) return obj
+    const names = ss.names || []
+    const key = name => name.replace(/^Gaia DR2 /i, 'GAIA ').replace(/^NAME /i, '').toLowerCase().replace(/\s/g, '')
+    const aliases = new Set(names.map(key))
+    for (const name of names) {
+      const candidate = $stel.getObj(name.replace(/^Gaia DR2 /i, 'GAIA '))
+      if (candidate && candidate.designations().some(designation => aliases.has(key(designation)))) return candidate
     }
-    if (!obj && ss.names[0].startsWith('Gaia DR2 ')) {
-      const gname = ss.names[0].replace(/^Gaia DR2 /, 'GAIA ')
-      obj = $stel.getObj(gname)
+  },
+
+  createSkySourceObject: function (source) {
+    let data = source
+    const { ra, de } = source.model_data || {}
+    if (source.coordinate_unit === 'rad' && Number.isFinite(ra) && Number.isFinite(de)) {
+      // The local catalog uses radians. Stellarium's object constructors use degrees.
+      data = {
+        ...source,
+        model_data: { ...source.model_data, ra: ra * 180 / Math.PI, de: de * 180 / Math.PI }
+      }
+      if (source.model === 'star' && /^[A-Za-z][A-Za-z -]+$/.test(source.names[0])) {
+        data.names = ['NAME ' + source.names[0], ...source.names]
+      }
     }
-    if (obj === null) return undefined
-    return obj
+    return Vue.prototype.$stel.createObj(source.model, data)
   },
 
   lookupSkySourceByName: function (name) {
     const hostname = window.location.hostname
     const baseURL = `http://${hostname}:8090`
     // return fetch(process.env.VUE_APP_NOCTUASKY_API_SERVER + '/api/v1/skysources/name/' + name)
-    return fetch(baseURL + '/name/' + name)
+    return fetch(baseURL + '/name/' + encodeURIComponent(name))
       .then(function (response) {
         if (!response.ok) {
-          throw response.body
+          throw new Error('Sky source lookup failed: ' + response.status)
         }
         return response.json()
-      }, err => {
-        throw err.response.body
       })
   },
 
@@ -395,14 +418,12 @@ const swh = {
     const baseURL = `http://${hostname}:8090`
     // console.log("querySkySources:" + baseURL)
     // return fetch(process.env.VUE_APP_NOCTUASKY_API_SERVER + '/?q=' + str + '&limit=' + limit)   //"http://192.168.2.31:8090"
-    return fetch(baseURL + '/?q=' + str + '&limit=' + limit)
+    return fetch(baseURL + '/?q=' + encodeURIComponent(str) + '&limit=' + limit)
       .then(function (response) {
         if (!response.ok) {
-          throw response.body
+          throw new Error('Sky source search failed: ' + response.status)
         }
         return response.json()
-      }, err => {
-        throw err.response.body
       })
   },
 
@@ -421,7 +442,7 @@ const swh = {
     const that = this
 
     if (!names || !names.length) {
-      throw new Error("Can't find object without names")
+      return Promise.reject(new Error("Can't find object without names"))
     }
 
     // Several artifical satellites share the same common name, so we use

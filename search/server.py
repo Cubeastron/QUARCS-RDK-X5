@@ -49,6 +49,7 @@ def build_index():
         sources.append({
             "model": model,
             "model_data": {"ra": ra, "de": dec},
+            "coordinate_unit": "rad",
             "names": names,
             "short_name": names[0],
             "types": [kind],
@@ -58,6 +59,21 @@ def build_index():
             if key:
                 index.append((key, name, source_id))
                 exact.setdefault(key, (name, source_id))
+
+    localized_catalog = CATALOG_DIR / "sky-zh-cn.json"
+    if localized_catalog.is_file():
+        catalog = json.loads(localized_catalog.read_text(encoding="utf-8"))
+        for entry in catalog["objects"]:
+            match = next((exact[key] for name in entry["names"]
+                          if (key := normalize_name(name)) in exact), None)
+            if match is None:
+                continue
+            _, source_id = match
+            for alias in (entry["zh"], *entry.get("aliases", [])):
+                key = normalize_name(alias)
+                if key and key not in exact:
+                    index.append((key, alias, source_id))
+                    exact[key] = (alias, source_id)
     return sources, index, exact
 
 
